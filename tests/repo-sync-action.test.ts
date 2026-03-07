@@ -39,6 +39,8 @@ function createInputs(overrides: Partial<ResolvedInputs> = {}): ResolvedInputs {
     ghFallbackToken: 'fallback-token',
     githubAuthMode: 'github_token_first',
     ciWorkflowBase64: '',
+    generateCiWorkflow: true,
+    ciWorkflowPath: '.github/workflows/ci.yml',
     ...overrides
   };
 }
