@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { load as loadYaml } from 'js-yaml';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -77,6 +78,52 @@ function createCoreStub(values: Record<string, string> = {}) {
   };
 }
 
+function createCollectionFixture(name: string) {
+  return {
+    info: {
+      name,
+      description: 'Collection description',
+      _postman_id: 'collection-id'
+    },
+    item: [
+      {
+        name: 'List Payments',
+        request: {
+          method: 'GET',
+          url: {
+            raw: '{{baseUrl}}/payments?status=active',
+            query: [{ key: 'status', value: 'active' }]
+          }
+        }
+      },
+      {
+        name: 'Orders',
+        item: [
+          {
+            name: 'Create Order',
+            request: {
+              method: 'POST',
+              url: 'https://api.example.com/orders',
+              header: [{ key: 'Content-Type', value: 'application/json' }],
+              body: {
+                mode: 'raw',
+                raw: '{"status":"created"}',
+                options: { raw: { language: 'json' } }
+              }
+            },
+            response: [{
+              name: 'Created',
+              code: 201,
+              status: 'Created',
+              body: '{"id":"ord_123"}'
+            }]
+          }
+        ]
+      }
+    ]
+  };
+}
+
 describe('repo sync action', () => {
   let originalCwd = '';
   let testDir = '';
@@ -135,7 +182,11 @@ describe('repo sync action', () => {
         url: 'https://mock.pstmn.io'
       }),
       createMonitor: vi.fn().mockResolvedValue('mon-123'),
-      getCollection: vi.fn().mockResolvedValue({ info: { name: 'demo' } }),
+      getCollection: vi
+        .fn()
+        .mockResolvedValueOnce(createCollectionFixture('[Baseline] core-payments'))
+        .mockResolvedValueOnce(createCollectionFixture('[Smoke] core-payments'))
+        .mockResolvedValueOnce(createCollectionFixture('[Contract] core-payments')),
       getEnvironment: vi.fn().mockResolvedValue({ values: [] })
     };
     const github = {
@@ -182,6 +233,48 @@ describe('repo sync action', () => {
       'name: CI/CD Pipeline'
     );
     expect(readFileSync('.postman/config.json', 'utf8')).toContain('"schemaVersion"');
+
+    const baselineCollection = loadYaml(
+      readFileSync('postman/collections/[Baseline] core-payments/collection.yaml', 'utf8')
+    ) as Record<string, any>;
+    const folderYaml = loadYaml(
+      readFileSync('postman/collections/[Baseline] core-payments/Orders/folder.yaml', 'utf8')
+    ) as Record<string, any>;
+    const nestedRequestYaml = loadYaml(
+      readFileSync(
+        'postman/collections/[Baseline] core-payments/Orders/Create Order.request.yaml',
+        'utf8'
+      )
+    ) as Record<string, any>;
+    const resourcesYaml = loadYaml(readFileSync('.postman/resources.yaml', 'utf8')) as Record<
+      string,
+      any
+    >;
+
+    expect(baselineCollection.type).toBe('collection');
+    expect(baselineCollection.items).toEqual([
+      { ref: './List Payments.request.yaml' },
+      { ref: './Orders/folder.yaml' }
+    ]);
+    expect(folderYaml.items).toEqual([{ ref: './Create Order.request.yaml' }]);
+    expect(nestedRequestYaml.method).toBe('POST');
+    expect(nestedRequestYaml.body).toEqual({
+      type: 'json',
+      content: '{"status":"created"}'
+    });
+    expect(resourcesYaml).toEqual({
+      workspace: { id: 'ws-123' },
+      cloudResources: {
+        collections: {
+          '../postman/collections/[Baseline] core-payments': 'col-baseline',
+          '../postman/collections/[Smoke] core-payments': 'col-smoke',
+          '../postman/collections/[Contract] core-payments': 'col-contract'
+        }
+      },
+      localResources: {
+        specs: ['../index.yaml']
+      }
+    });
   });
 
   it('updates existing environments on reruns instead of creating duplicates', async () => {
@@ -190,7 +283,7 @@ describe('repo sync action', () => {
       updateEnvironment: vi.fn().mockResolvedValue(undefined),
       createMock: vi.fn().mockResolvedValue({ uid: 'mock-1', url: 'https://mock.pstmn.io' }),
       createMonitor: vi.fn().mockResolvedValue('mon-1'),
-      getCollection: vi.fn().mockResolvedValue({ info: { name: 'demo' } }),
+      getCollection: vi.fn().mockResolvedValue(createCollectionFixture('[Smoke] core-payments')),
       getEnvironment: vi.fn().mockResolvedValue({ values: [] })
     };
     const github = {
@@ -232,7 +325,7 @@ describe('repo sync action', () => {
       updateEnvironment: vi.fn().mockResolvedValue(undefined),
       createMock: vi.fn().mockResolvedValue({ uid: 'mock-1', url: 'https://mock.pstmn.io' }),
       createMonitor: vi.fn().mockResolvedValue('mon-1'),
-      getCollection: vi.fn().mockResolvedValue({ info: { name: 'demo' } }),
+      getCollection: vi.fn().mockResolvedValue(createCollectionFixture('[Smoke] core-payments')),
       getEnvironment: vi.fn().mockResolvedValue({ values: [] })
     };
     const repoMutation = {
@@ -279,7 +372,7 @@ describe('repo sync action', () => {
       updateEnvironment: vi.fn().mockResolvedValue(undefined),
       createMock: vi.fn().mockResolvedValue({ uid: 'mock-1', url: 'https://mock.pstmn.io' }),
       createMonitor: vi.fn().mockResolvedValue('mon-1'),
-      getCollection: vi.fn().mockResolvedValue({ info: { name: 'demo' } }),
+      getCollection: vi.fn().mockResolvedValue(createCollectionFixture('[Smoke] core-payments')),
       getEnvironment: vi.fn().mockResolvedValue({ values: [] })
     };
 

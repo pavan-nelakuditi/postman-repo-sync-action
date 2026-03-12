@@ -6,6 +6,7 @@ import {
   rmSync,
   writeFileSync
 } from 'node:fs';
+import { dump as dumpYaml } from 'js-yaml';
 
 import { convertAndSplitCollection } from './postman-v3/converter.js';
 import { CI_WORKFLOW_TEMPLATE } from './lib/ci-workflow-template.js';
@@ -345,6 +346,28 @@ function writeJsonFile(path: string, content: unknown, normalize = false): void 
   writeFileSync(path, JSON.stringify(data, null, 2));
 }
 
+function buildResourcesManifest(
+  workspaceId: string,
+  collectionMap: Record<string, string>
+): string {
+  const manifest: Record<string, unknown> = {
+    workspace: { id: workspaceId }
+  };
+  if (Object.keys(collectionMap).length > 0) {
+    manifest.cloudResources = {
+      collections: collectionMap
+    };
+  }
+  manifest.localResources = {
+    specs: ['../index.yaml']
+  };
+  return dumpYaml(manifest, {
+    lineWidth: -1,
+    noRefs: true,
+    sortKeys: false
+  });
+}
+
 async function exportArtifacts(
   inputs: ResolvedInputs,
   dependencies: RepoSyncDependencies,
@@ -363,22 +386,31 @@ async function exportArtifacts(
   ensureDir('.postman');
   ensureDir('.github/workflows');
 
-  const manifestCollections: string[] = [];
+  const manifestCollections: Record<string, string> = {};
 
   if (inputs.baselineCollectionId) {
-    const col = await dependencies.postman.getCollection(inputs.baselineCollectionId);
-    await convertAndSplitCollection(col, `${collectionsDir}/[Baseline] ${inputs.projectName}`);
-    manifestCollections.push(`    ../${collectionsDir}/[Baseline] ${inputs.projectName}: ${inputs.baselineCollectionId}`);
+    const col = stripVolatileFields(
+      await dependencies.postman.getCollection(inputs.baselineCollectionId)
+    );
+    await convertAndSplitCollection(col as any, `${collectionsDir}/[Baseline] ${inputs.projectName}`);
+    manifestCollections[`../${collectionsDir}/[Baseline] ${inputs.projectName}`] =
+      inputs.baselineCollectionId;
   }
   if (inputs.smokeCollectionId) {
-    const col = await dependencies.postman.getCollection(inputs.smokeCollectionId);
-    await convertAndSplitCollection(col, `${collectionsDir}/[Smoke] ${inputs.projectName}`);
-    manifestCollections.push(`    ../${collectionsDir}/[Smoke] ${inputs.projectName}: ${inputs.smokeCollectionId}`);
+    const col = stripVolatileFields(
+      await dependencies.postman.getCollection(inputs.smokeCollectionId)
+    );
+    await convertAndSplitCollection(col as any, `${collectionsDir}/[Smoke] ${inputs.projectName}`);
+    manifestCollections[`../${collectionsDir}/[Smoke] ${inputs.projectName}`] =
+      inputs.smokeCollectionId;
   }
   if (inputs.contractCollectionId) {
-    const col = await dependencies.postman.getCollection(inputs.contractCollectionId);
-    await convertAndSplitCollection(col, `${collectionsDir}/[Contract] ${inputs.projectName}`);
-    manifestCollections.push(`    ../${collectionsDir}/[Contract] ${inputs.projectName}: ${inputs.contractCollectionId}`);
+    const col = stripVolatileFields(
+      await dependencies.postman.getCollection(inputs.contractCollectionId)
+    );
+    await convertAndSplitCollection(col as any, `${collectionsDir}/[Contract] ${inputs.projectName}`);
+    manifestCollections[`../${collectionsDir}/[Contract] ${inputs.projectName}`] =
+      inputs.contractCollectionId;
   }
 
   for (const [envName, envUid] of Object.entries(envUids)) {
@@ -397,16 +429,7 @@ async function exportArtifacts(
     mockPaths: [`${inputs.artifactDir}/mocks/`]
   });
 
-  let manifestYaml = `workspace:\n  id: ${inputs.workspaceId}\n`;
-  if (manifestCollections.length > 0) {
-      manifestYaml += `cloudResources:\n  collections:\n${manifestCollections.join('\n')}\n`;
-  }
-  manifestYaml += `localResources:\n  specs:\n    - ../index.yaml\n`;
-
-  writeFileSync(
-    '.postman/resources.yaml',
-    manifestYaml
-  );
+  writeFileSync('.postman/resources.yaml', buildResourcesManifest(inputs.workspaceId, manifestCollections));
 }
 
 function renderCiWorkflow(inputs: ResolvedInputs): string {

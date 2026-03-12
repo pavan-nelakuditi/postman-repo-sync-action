@@ -2617,7 +2617,7 @@ var require_parseParams = __commonJS({
 var require_basename = __commonJS({
   "node_modules/@fastify/busboy/lib/utils/basename.js"(exports2, module2) {
     "use strict";
-    module2.exports = function basename2(path2) {
+    module2.exports = function basename(path2) {
       if (typeof path2 !== "string") {
         return "";
       }
@@ -2644,7 +2644,7 @@ var require_multipart = __commonJS({
     var Dicer = require_Dicer();
     var parseParams = require_parseParams();
     var decodeText = require_decodeText();
-    var basename2 = require_basename();
+    var basename = require_basename();
     var getLimit = require_getLimit();
     var RE_BOUNDARY = /^boundary$/i;
     var RE_FIELD = /^form-data$/i;
@@ -2761,7 +2761,7 @@ var require_multipart = __commonJS({
               } else if (RE_FILENAME.test(parsed[i][0])) {
                 filename = parsed[i][1];
                 if (!preservePath) {
-                  filename = basename2(filename);
+                  filename = basename(filename);
                 }
               }
             }
@@ -18145,7 +18145,7 @@ var require_summary = __commonJS({
     exports2.summary = exports2.markdownSummary = exports2.SUMMARY_DOCS_URL = exports2.SUMMARY_ENV_VAR = void 0;
     var os_1 = require("os");
     var fs_1 = require("fs");
-    var { access, appendFile, writeFile: writeFile3 } = fs_1.promises;
+    var { access, appendFile, writeFile: writeFile2 } = fs_1.promises;
     exports2.SUMMARY_ENV_VAR = "GITHUB_STEP_SUMMARY";
     exports2.SUMMARY_DOCS_URL = "https://docs.github.com/actions/using-workflows/workflow-commands-for-github-actions#adding-a-job-summary";
     var Summary = class {
@@ -18203,7 +18203,7 @@ var require_summary = __commonJS({
         return __awaiter(this, void 0, void 0, function* () {
           const overwrite = !!(options === null || options === void 0 ? void 0 : options.overwrite);
           const filePath = yield this.filePath();
-          const writeFunc = overwrite ? writeFile3 : appendFile;
+          const writeFunc = overwrite ? writeFile2 : appendFile;
           yield writeFunc(filePath, this._buffer, { encoding: "utf8" });
           return this.emptyBuffer();
         });
@@ -19824,10 +19824,6 @@ module.exports = __toCommonJS(index_exports);
 var core2 = __toESM(require_core(), 1);
 var exec = __toESM(require_exec(), 1);
 var import_node_fs = require("node:fs");
-
-// src/postman-v3/converter.ts
-var fs = __toESM(require("fs/promises"), 1);
-var path = __toESM(require("path"), 1);
 
 // node_modules/js-yaml/dist/js-yaml.mjs
 function isNothing(subject) {
@@ -22416,912 +22412,507 @@ var safeLoadAll = renamed("safeLoadAll", "loadAll");
 var safeDump = renamed("safeDump", "dump");
 
 // src/postman-v3/converter.ts
-function transformAuth(v2Auth) {
-  if (!v2Auth || !v2Auth.type) {
-    return { type: "noauth" };
-  }
-  const authTypeMap = {
-    apikey: "apikey",
-    awsv4: "awsv4",
-    basic: "basic",
-    bearer: "bearer",
-    digest: "digest",
-    edgegrid: "edgegrid",
-    hawk: "hawk",
-    jwt: "jwt",
-    noauth: "noauth",
-    oauth1: "oauth1",
-    oauth2: "oauth2",
-    ntlm: "ntlm",
-    asap: "asap"
-  };
-  const type2 = authTypeMap[v2Auth.type] || "noauth";
-  const credentials = [];
-  const authFields = [
-    "apikey",
-    "basic",
-    "bearer",
-    "oauth1",
-    "oauth2",
-    "ntlm",
-    "digest",
-    "hawk",
-    "awsv4",
-    "jwt",
-    "asap",
-    "edgegrid"
-  ];
-  for (const field of authFields) {
-    if (v2Auth[field] && Array.isArray(v2Auth[field])) {
-      v2Auth[field].forEach((item) => {
-        if (item.key && item.value !== void 0) {
-          credentials.push({ key: item.key, value: item.value });
-        }
-      });
-      break;
-    }
-  }
-  if (type2 === "noauth") {
-    return { type: type2 };
-  }
-  if (type2 === "inherit") {
-    return { type: type2 };
-  }
-  return {
-    type: type2,
-    credentials: credentials.length > 0 ? credentials : void 0
-  };
+var fs = __toESM(require("node:fs/promises"), 1);
+var path = __toESM(require("node:path"), 1);
+var AUTH_FIELDS = [
+  "apikey",
+  "awsv4",
+  "basic",
+  "bearer",
+  "digest",
+  "edgegrid",
+  "hawk",
+  "jwt",
+  "oauth1",
+  "oauth2",
+  "ntlm",
+  "asap"
+];
+function stringifyYaml(value) {
+  return dump(value, {
+    lineWidth: -1,
+    noRefs: true,
+    sortKeys: false
+  });
 }
-function transformEventsToScripts(v2Events, context = "http") {
-  if (!v2Events || !Array.isArray(v2Events) || v2Events.length === 0) {
-    return void 0;
-  }
-  const listenToTypeMap = {
-    prerequest: context === "http" ? "beforeRequest" : `http:beforeRequest`,
-    test: context === "http" ? "afterResponse" : `http:afterResponse`
-  };
-  const scripts = v2Events.map((v2Event) => {
-    if (!v2Event || !v2Event.listen || !v2Event.script) {
-      return null;
-    }
-    const scriptType = listenToTypeMap[v2Event.listen];
-    if (!scriptType) {
-      return null;
-    }
-    const code = (v2Event.script.exec || []).filter(
-      (line) => line && line.trim() !== ""
-    );
-    if (code.length === 0) {
-      return null;
-    }
-    const script = {
-      type: scriptType,
-      code: code.length === 1 ? code[0] : code
-      // String for single line, array for multiple lines
-    };
-    if (v2Event.script.type === "text/javascript") {
-      script.language = "text/javascript";
-    }
-    if (v2Event.script.src) {
-      if (Array.isArray(v2Event.script.src) && v2Event.script.src.length > 0) {
-        script.packages = { id: v2Event.script.src[0] };
-      } else if (typeof v2Event.script.src === "string") {
-        script.packages = { id: v2Event.script.src };
-      }
-    }
-    if (v2Event.script.requests && typeof v2Event.script.requests === "object" && Object.keys(v2Event.script.requests).length > 0) {
-      script.requests = v2Event.script.requests;
-    }
-    return script;
-  }).filter((script) => script !== null);
-  return scripts.length > 0 ? scripts : void 0;
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
 }
-function extractDescription(v2Description) {
-  if (!v2Description) {
-    return void 0;
+function asTrimmedString(value) {
+  return value === void 0 || value === null ? "" : String(value).trim();
+}
+function toOptionalString(value) {
+  const normalized = asTrimmedString(value);
+  return normalized ? normalized : void 0;
+}
+function toNullableString(value) {
+  if (value === void 0 || value === null) {
+    return null;
   }
-  if (typeof v2Description === "string") {
-    return v2Description;
+  return String(value);
+}
+function extractDescription(value) {
+  if (typeof value === "string") {
+    return value || void 0;
   }
-  if (typeof v2Description === "object" && v2Description.content !== void 0) {
-    return v2Description.content || "";
+  if (value && typeof value === "object") {
+    return toOptionalString(value.content);
   }
   return void 0;
 }
-function transformVariable(v2Var) {
-  const variable = {
-    key: v2Var.key || "",
-    value: v2Var.value || ""
-  };
-  const description = extractDescription(v2Var.description);
-  if (description !== void 0) {
-    variable.description = description;
-  }
-  if (v2Var.disabled !== void 0) {
-    variable.disabled = v2Var.disabled;
-  }
-  return variable;
+function sanitizePathSegment(value, fallback) {
+  const normalized = value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim();
+  return normalized || fallback;
 }
-function transformKeyValue(v2Item) {
-  const item = {
-    key: v2Item.key || "",
-    value: v2Item.value || ""
-  };
-  const description = extractDescription(v2Item.description);
-  if (description !== void 0) {
-    item.description = description;
+function buildUniqueRef(baseName, kind, usedRefs) {
+  const fallback = kind === "folder" ? "Folder" : "Request";
+  const safeBase = sanitizePathSegment(baseName, fallback);
+  let counter = 1;
+  while (true) {
+    const candidateName = counter === 1 ? safeBase : `${safeBase} ${counter}`;
+    const ref = kind === "folder" ? `./${candidateName}/folder.yaml` : `./${candidateName}.request.yaml`;
+    const refKey = ref.toLowerCase();
+    if (!usedRefs.has(refKey)) {
+      usedRefs.add(refKey);
+      return { ref, name: candidateName };
+    }
+    counter += 1;
   }
-  if (v2Item.disabled !== void 0) {
-    item.disabled = v2Item.disabled;
-  }
-  return item;
 }
-function transformQueryParam(v2Param) {
-  const param = {
-    key: v2Param.key ?? null,
-    value: v2Param.value ?? null
-  };
-  const description = extractDescription(v2Param.description);
-  if (description !== void 0) {
-    param.description = description;
+function transformKeyValue(entry, options) {
+  const description = extractDescription(entry.description);
+  const allowNullValue = Boolean(options?.allowNullValue);
+  const keyValue = entry.key === void 0 || entry.key === null ? null : String(entry.key);
+  const value = allowNullValue ? toNullableString(entry.value) : toOptionalString(entry.value) ?? "";
+  const descriptor = allowNullValue ? { key: keyValue, value } : { key: keyValue ?? "", value };
+  if (description) {
+    descriptor.description = description;
   }
-  if (v2Param.disabled !== void 0) {
-    param.disabled = v2Param.disabled;
+  if (entry.disabled !== void 0) {
+    descriptor.disabled = entry.disabled;
   }
-  return param;
+  if (!allowNullValue) {
+    const typedDescriptor = descriptor;
+    if (entry.type) {
+      typedDescriptor.type = entry.type;
+    }
+    if (entry.src) {
+      typedDescriptor.src = entry.src;
+    }
+    if (entry.contentType) {
+      typedDescriptor.contentType = entry.contentType;
+    }
+  }
+  return descriptor;
 }
-function transformUrl(v2Url) {
-  if (typeof v2Url === "string") {
-    return v2Url || "";
+function transformAuth(auth) {
+  const type2 = toOptionalString(auth?.type);
+  if (!type2) {
+    return void 0;
   }
-  if (!v2Url) {
+  if (type2 === "noauth" || type2 === "inherit") {
+    return { type: type2 };
+  }
+  const credentials = [];
+  const typedAuth = auth;
+  for (const field of AUTH_FIELDS) {
+    const rawValues = typedAuth[field];
+    if (!Array.isArray(rawValues)) {
+      continue;
+    }
+    for (const entry of rawValues) {
+      credentials.push(transformKeyValue(entry));
+    }
+    break;
+  }
+  return credentials.length > 0 ? { type: type2, credentials } : { type: type2 };
+}
+function transformScripts(events, scope) {
+  const listenMap = scope === "collection" ? {
+    prerequest: "http:beforeRequest",
+    test: "http:afterResponse"
+  } : {
+    prerequest: "beforeRequest",
+    test: "afterResponse"
+  };
+  const scripts = asArray(events).map((event) => {
+    const scriptType = event.listen ? listenMap[event.listen] : void 0;
+    const script = event.script;
+    if (!scriptType || !script) {
+      return null;
+    }
+    const execLines = Array.isArray(script.exec) ? script.exec.map((line) => String(line)).filter((line) => line.trim().length > 0) : typeof script.exec === "string" ? [script.exec].filter((line) => line.trim().length > 0) : [];
+    if (execLines.length === 0) {
+      return null;
+    }
+    const descriptor = {
+      type: scriptType,
+      code: execLines.length === 1 ? execLines[0] : execLines
+    };
+    if (script.type === "text/javascript") {
+      descriptor.language = "text/javascript";
+    }
+    const packageSource = Array.isArray(script.src) ? script.src.find((entry) => asTrimmedString(entry)) : script.src;
+    const packageId = toOptionalString(packageSource);
+    if (packageId) {
+      descriptor.packages = { id: packageId };
+    }
+    if (script.requests && Object.keys(script.requests).length > 0) {
+      descriptor.requests = script.requests;
+    }
+    return descriptor;
+  }).filter((script) => Boolean(script));
+  return scripts.length > 0 ? scripts : void 0;
+}
+function transformUrl(url) {
+  if (typeof url === "string") {
+    return url;
+  }
+  if (!url) {
     return "";
   }
-  if (v2Url.raw && v2Url.raw.trim() !== "") {
-    return v2Url.raw;
+  if (toOptionalString(url.raw)) {
+    return String(url.raw);
   }
   const parts = [];
-  if (v2Url.protocol) {
-    parts.push(v2Url.protocol + "://");
+  const protocol = toOptionalString(url.protocol);
+  if (protocol) {
+    parts.push(`${protocol}://`);
   }
-  if (v2Url.host && Array.isArray(v2Url.host)) {
-    parts.push(v2Url.host.join("."));
+  const host = Array.isArray(url.host) ? url.host.join(".") : asTrimmedString(url.host);
+  if (host) {
+    parts.push(host);
   }
-  if (v2Url.path && Array.isArray(v2Url.path)) {
-    const pathStr = v2Url.path.join("/");
-    if (pathStr) {
-      parts.push(pathStr);
+  const pathSegments = Array.isArray(url.path) ? url.path : toOptionalString(url.path) ? [String(url.path)] : [];
+  if (pathSegments.length > 0) {
+    const joinedPath = pathSegments.join("/");
+    if (joinedPath) {
+      const prefix = parts.length > 0 && !joinedPath.startsWith("/") ? "/" : "";
+      parts.push(`${prefix}${joinedPath}`);
     }
   }
-  if (v2Url.query && Array.isArray(v2Url.query) && v2Url.query.length > 0) {
-    const queryStr = v2Url.query.map((q) => {
-      if (q.value === null || q.value === void 0) {
-        return q.key || "";
-      }
-      return `${q.key || ""}=${q.value || ""}`;
-    }).filter((q) => q).join("&");
-    if (queryStr) {
-      parts.push("?" + queryStr);
+  const query = asArray(url.query).map((entry) => {
+    const key = toOptionalString(entry.key);
+    if (!key) {
+      return "";
     }
+    const value = entry.value;
+    if (value === void 0 || value === null || value === "") {
+      return key;
+    }
+    return `${key}=${String(value)}`;
+  }).filter(Boolean).join("&");
+  if (query) {
+    parts.push(`?${query}`);
   }
-  const constructed = parts.join("");
-  return constructed || "";
+  return parts.join("");
 }
-function transformBody(v2Body) {
-  if (!v2Body || !v2Body.mode) {
-    return { type: "none" };
+function transformBody(body) {
+  const mode = toOptionalString(body?.mode);
+  if (!mode || mode === "none") {
+    return void 0;
   }
-  const modeMap = {
-    raw: "text",
-    urlencoded: "urlencoded",
-    formdata: "formdata",
-    file: "file",
-    graphql: "text"
-  };
-  const type2 = modeMap[v2Body.mode] || "none";
-  if (type2 === "none") {
-    return { type: "none" };
-  }
-  if (type2 === "urlencoded" || type2 === "formdata") {
-    const content2 = (v2Body[type2] || []).map((item) => {
-      const contentItem = {
-        key: item.key || "",
-        value: item.value || "",
-        type: type2 === "formdata" ? item.type || "text" : void 0
-      };
-      const description = extractDescription(item.description);
-      if (description !== void 0) {
-        contentItem.description = description;
+  if (mode === "urlencoded" || mode === "formdata") {
+    const entries = asArray(mode === "urlencoded" ? body?.urlencoded : body?.formdata).map((entry) => transformKeyValue(entry)).map((entry) => {
+      if (mode === "formdata" && entry.type === "file" && !entry.src) {
+        delete entry.value;
       }
-      if (item.disabled !== void 0) {
-        contentItem.disabled = item.disabled;
-      }
-      if (type2 === "formdata" && item.type === "file") {
-        if (item.src) {
-          contentItem.src = item.src;
-        }
-        delete contentItem.value;
-      }
-      if (item.contentType) {
-        contentItem.contentType = item.contentType;
-      }
-      return contentItem;
+      return entry;
     });
-    return {
-      type: type2,
-      content: content2
-    };
+    return entries.length > 0 ? { type: mode, content: entries } : void 0;
   }
-  if (type2 === "file") {
-    return {
-      type: "file",
-      content: {
-        src: v2Body.file?.src || ""
-      }
-    };
+  if (mode === "file") {
+    const fileSrc = body?.file?.src;
+    if (Array.isArray(fileSrc) && fileSrc.length > 0) {
+      return { type: "file", content: { src: fileSrc } };
+    }
+    if (toOptionalString(fileSrc)) {
+      return { type: "file", content: { src: String(fileSrc) } };
+    }
+    return void 0;
   }
-  const contentType = v2Body.options?.raw?.language || "text";
-  const content = v2Body.raw || v2Body[type2] || "";
+  const content = toOptionalString(body?.raw) ?? toOptionalString(body?.graphql);
+  if (!content) {
+    return void 0;
+  }
   return {
-    type: contentType,
+    type: toOptionalString(body?.options?.raw?.language) ?? "text",
     content
   };
 }
-function transformRequest(v2Request) {
-  if (v2Request.method === "VIEW" || !v2Request.url) {
-    return null;
+function detectExampleBodyType(body) {
+  const trimmed = body.trim();
+  if (!trimmed) {
+    return "text";
   }
-  const url = transformUrl(v2Request.url);
-  if (!url || url.trim() === "") {
-    return null;
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return "json";
   }
-  const request = {
-    type: "http",
-    url
-  };
-  if (v2Request.method && v2Request.method !== "VIEW") {
-    request.method = v2Request.method;
-  } else {
-    request.method = "GET";
+  if (/^<!doctype/i.test(trimmed) || /^<html/i.test(trimmed)) {
+    return "html";
   }
-  if (v2Request.header && v2Request.header.length > 0) {
-    request.headers = v2Request.header.map(transformKeyValue);
+  if (trimmed.startsWith("<")) {
+    return "xml";
   }
-  if (v2Request.url && v2Request.url.query && v2Request.url.query.length > 0) {
-    request.queryParams = v2Request.url.query.map(transformQueryParam);
-  }
-  if (v2Request.url && v2Request.url.variable && v2Request.url.variable.length > 0) {
-    request.pathVariables = v2Request.url.variable.map(transformKeyValue);
-  }
-  if (v2Request.body) {
-    request.body = transformBody(v2Request.body);
-  }
-  if (v2Request.auth) {
-    request.auth = transformAuth(v2Request.auth);
-  }
-  if (v2Request.event && v2Request.event.length > 0) {
-    const scripts = transformEventsToScripts(v2Request.event, "http");
-    if (scripts) {
-      request.scripts = scripts;
-    }
-  }
-  if (v2Request.response && v2Request.response.length > 0) {
-    request.examples = v2Request.response.map((v2Response) => {
-      const hasBody = v2Response.body && v2Response.body.trim() !== "";
-      const hasHeaders = v2Response.header && v2Response.header.length > 0;
-      const example = {
-        response: {
-          statusCode: v2Response.code || 200,
-          statusText: v2Response.status || "OK",
-          // Body is required by schema, so always include it
-          body: {
-            type: "text",
-            content: hasBody ? v2Response.body : ""
-          }
-        }
-      };
-      if (hasBody) {
-        const bodyStr = v2Response.body;
-        if (bodyStr.trim().startsWith("{") || bodyStr.trim().startsWith("[")) {
-          example.response.body.type = "json";
-        } else if (bodyStr.trim().startsWith("<")) {
-          example.response.body.type = "xml";
-        } else if (bodyStr.trim().startsWith("<!DOCTYPE") || bodyStr.trim().startsWith("<html")) {
-          example.response.body.type = "html";
-        }
-      }
-      if (hasHeaders) {
-        example.response.headers = v2Response.header.map(transformKeyValue);
-      }
-      if (v2Response.name) {
-        example.name = v2Response.name;
-      }
-      const exampleDescription = extractDescription(v2Response.description);
-      if (exampleDescription !== void 0) {
-        example.description = exampleDescription;
-      }
-      if (v2Response.id) {
-        example.id = v2Response.id;
-      }
-      return example;
-    });
-  }
-  return request;
+  return "text";
 }
-function transformItem(v2Item) {
-  if (v2Item.request) {
-    const request = transformRequest(v2Item.request);
-    if (!request) {
-      return null;
-    }
-    if (v2Item.name) {
-      request.name = v2Item.name;
-    }
-    const description = extractDescription(v2Item.description);
-    if (description !== void 0) {
-      request.description = description;
-    }
-    if (v2Item.id) {
-      request.id = v2Item.id;
-    }
-    if (v2Item.response && v2Item.response.length > 0 && !request.examples) {
-      request.examples = v2Item.response.map((v2Response) => {
-        const hasBody = v2Response.body && v2Response.body.trim() !== "";
-        const hasHeaders = v2Response.header && v2Response.header.length > 0;
-        const example = {
-          response: {
-            statusCode: v2Response.code || 200,
-            statusText: v2Response.status || "OK",
-            // Body is required by schema, so always include it
-            body: {
-              type: "text",
-              content: hasBody ? v2Response.body : ""
-            }
-          }
-        };
-        if (hasBody) {
-          const bodyStr = v2Response.body;
-          if (bodyStr.trim().startsWith("{") || bodyStr.trim().startsWith("[")) {
-            example.response.body.type = "json";
-          } else if (bodyStr.trim().startsWith("<")) {
-            example.response.body.type = "xml";
-          } else if (bodyStr.trim().startsWith("<!DOCTYPE") || bodyStr.trim().startsWith("<html")) {
-            example.response.body.type = "html";
-          }
+function transformResponses(responses) {
+  const examples = asArray(responses).map((response) => {
+    const descriptor = {
+      response: {
+        statusCode: response.code ?? 200,
+        statusText: toOptionalString(response.status) ?? "OK",
+        body: {
+          type: detectExampleBodyType(response.body ?? ""),
+          content: response.body ?? ""
         }
-        if (hasHeaders) {
-          example.response.headers = v2Response.header.map(transformKeyValue);
-        }
-        if (v2Response.name) {
-          example.name = v2Response.name;
-        }
-        return example;
-      });
-    }
-    return request;
-  } else if (v2Item.item && Array.isArray(v2Item.item)) {
-    const transformedItems = v2Item.item.map(transformItem).filter((item) => item !== null);
-    if (transformedItems.length === 0 && !v2Item.description) {
-      return null;
-    }
-    const folder = {
-      type: "folder",
-      name: v2Item.name || "",
-      items: transformedItems
+      }
     };
-    const description = extractDescription(v2Item.description);
-    if (description !== void 0) {
-      folder.description = description;
+    const name = toOptionalString(response.name);
+    if (name) {
+      descriptor.name = name;
     }
-    if (v2Item.id) {
-      folder.id = v2Item.id;
+    const id = toOptionalString(response.id);
+    if (id) {
+      descriptor.id = id;
     }
-    if (v2Item.auth) {
-      folder.auth = transformAuth(v2Item.auth);
+    const description = extractDescription(response.description);
+    if (description) {
+      descriptor.description = description;
     }
-    if (v2Item.event && v2Item.event.length > 0) {
-      const scripts = transformEventsToScripts(v2Item.event, "collection");
-      if (scripts) {
-        folder.scripts = scripts;
-      }
-    }
-    return folder;
-  }
-  return null;
-}
-function transformCollection(v2Collection) {
-  const collection = {
-    $schema: "https://schema.postman.com/json/draft-2020-12/collection/v3.0.0/",
-    type: "collection",
-    name: v2Collection.info?.name || "Untitled Collection",
-    items: []
-  };
-  const description = extractDescription(v2Collection.info?.description);
-  if (description !== void 0) {
-    collection.description = description;
-  }
-  if (v2Collection.info?._postman_id) {
-    collection.id = v2Collection.info._postman_id;
-  }
-  if (v2Collection.variable && v2Collection.variable.length > 0) {
-    collection.variables = v2Collection.variable.map(transformVariable);
-  }
-  if (v2Collection.auth) {
-    collection.auth = transformAuth(v2Collection.auth);
-  }
-  if (v2Collection.event && v2Collection.event.length > 0) {
-    const scripts = transformEventsToScripts(v2Collection.event, "collection");
-    if (scripts) {
-      collection.scripts = scripts;
-    }
-  }
-  if (v2Collection.item && Array.isArray(v2Collection.item)) {
-    collection.items = v2Collection.item.map(transformItem).filter((item) => item !== null);
-  }
-  return collection;
-}
-function sanitizeNullBytes(obj) {
-  if (typeof obj === "string") {
-    return obj.replace(/\u0000/g, "");
-  }
-  if (Array.isArray(obj)) {
-    return obj.map(sanitizeNullBytes);
-  }
-  if (obj && typeof obj === "object") {
-    const sanitized = {};
-    for (const key in obj) {
-      sanitized[key] = sanitizeNullBytes(obj[key]);
-    }
-    return sanitized;
-  }
-  return obj;
-}
-function convertScriptCodeArrayToBlockScalar(yamlStr) {
-  const lines = yamlStr.split("\n");
-  const result = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    const codeMatch = line.match(/^(\s+)code:\s*$/);
-    if (codeMatch) {
-      const indent = codeMatch[1];
-      i++;
-      const codeLines = [];
-      while (i < lines.length) {
-        const arrayLine = lines[i];
-        const arrayMatch = arrayLine.match(
-          new RegExp(
-            `^${indent.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}  - (.+)$`
-          )
-        );
-        if (arrayMatch) {
-          let content = arrayMatch[1].trim();
-          if (content.startsWith('"') && content.endsWith('"') || content.startsWith("'") && content.endsWith("'")) {
-            content = content.slice(1, -1);
-            if (content.includes("''")) {
-              content = content.replace(/''/g, "'");
-            }
-            if (content.includes('\\"')) {
-              content = content.replace(/\\"/g, '"');
-            }
-          }
-          codeLines.push(content);
-          i++;
-        } else {
-          break;
-        }
-      }
-      if (codeLines.length > 0) {
-        result.push(`${indent}code: |-`);
-        codeLines.forEach((codeLine) => {
-          result.push(`${indent}  ${codeLine}`);
-        });
-      } else {
-        result.push(line);
-      }
-    } else {
-      result.push(line);
-      i++;
-    }
-  }
-  return result.join("\n");
-}
-function sanitizeFolderName(name) {
-  return name.replace(/[<>:"/\\|?*]/g, "_").replace(/\s+/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").substring(0, 100);
-}
-async function generateExamples() {
-  try {
-    await mkdir(v3Dir, { recursive: true });
-    const files = await readdir(v2Dir);
-    const v2Files = files.filter(
-      (file) => file.endsWith(".json") || file.endsWith(".postman_collection.json")
+    const headers = asArray(response.header).map(
+      (entry) => transformKeyValue(entry)
     );
-    if (v2Files.length === 0) {
-      console.log("\u26A0\uFE0F  No v2 collection files found in examples/v2");
-      return;
+    if (headers.length > 0) {
+      descriptor.response.headers = headers;
     }
-    console.log(`\u{1F504} Converting ${v2Files.length} v2 collection(s) to v3...`);
-    for (const file of v2Files) {
-      const filePath = join(v2Dir, file);
-      const v2Content = JSON.parse(await readFile(filePath, "utf-8"));
-      const v3Collection = transformCollection(v2Content);
-      const collectionName = sanitizeFolderName(v3Collection.name);
-      const collectionDir = join(v3Dir, collectionName);
-      await mkdir(collectionDir, { recursive: true });
-      const jsonPath = join(collectionDir, "_collection.json");
-      const sanitizedCollection = sanitizeNullBytes(v3Collection);
-      await writeFile(
-        jsonPath,
-        JSON.stringify(sanitizedCollection, null, 2),
-        "utf-8"
-      );
-      const yamlPath = join(collectionDir, "_collection.yaml");
-      let yamlContent = dump(v3Collection, {
-        indent: 2,
-        lineWidth: -1,
-        noRefs: true,
-        sortKeys: false
-      });
-      yamlContent = convertScriptCodeArrayToBlockScalar(yamlContent);
-      await writeFile(yamlPath, yamlContent, "utf-8");
-      console.log(`  \u2713 ${collectionName}`);
-    }
-    console.log(`\u2705 Generated ${v2Files.length} v3 collection(s)`);
-  } catch (error) {
-    console.error("\u274C Error:", error.message);
-    if (error.stack) {
-      console.error(error.stack);
-    }
-    process.exit(1);
-  }
-}
-generateExamples();
-var REQUEST_TYPES = /* @__PURE__ */ new Set([
-  "http",
-  "grpc",
-  "graphql",
-  "websocket",
-  "socketio",
-  "mqtt",
-  "mcp",
-  "llm"
-]);
-function shouldUseBlockScalar(str2) {
-  if (typeof str2 !== "string") {
-    return false;
-  }
-  return str2.length > 100 || str2.includes("\n");
-}
-function shouldInclude(value) {
-  if (value === null || value === void 0) {
-    return false;
-  }
-  if (Array.isArray(value)) {
-    return value.length > 0;
-  }
-  if (typeof value === "string") {
-    return value.trim().length > 0;
-  }
-  if (typeof value === "object") {
-    return Object.keys(value).length > 0;
-  }
-  return true;
-}
-function hasBodyContent(body) {
-  if (!body) return false;
-  if (body.type === "urlencoded" || body.type === "formdata") {
-    return Array.isArray(body.content) && body.content.length > 0;
-  }
-  if (body.type === "file") {
-    return body.content && body.content.src;
-  }
-  if (body.type === "none") {
-    return false;
-  }
-  return body.content && typeof body.content === "string" && body.content.trim().length > 0;
-}
-function shouldIncludeAuth(auth) {
-  if (!auth) return false;
-  if (Array.isArray(auth)) {
-    return auth.length > 0;
-  }
-  return auth.type !== "noauth";
-}
-function processScripts(scripts) {
-  if (!shouldInclude(scripts)) {
-    return void 0;
-  }
-  return scripts.map((script) => {
-    const scriptObj = {
-      type: script.type,
-      code: script.code
-    };
-    if (script.language) {
-      scriptObj.language = script.language;
-    }
-    if (script.packages) {
-      scriptObj.packages = script.packages;
-    }
-    if (script.requests && Object.keys(script.requests).length > 0) {
-      scriptObj.requests = script.requests;
-    }
-    return scriptObj;
+    return descriptor;
   });
+  return examples.length > 0 ? examples : void 0;
 }
-var PROTOCOL_FIELDS = {
-  http: ["method", "queryParams", "pathVariables"],
-  grpc: ["methodPath", "methodDescriptor", "message", "metadata"],
-  graphql: ["query", "variables", "schema"],
-  websocket: ["queryParams", "messages"],
-  socketio: ["queryParams", "events", "messages"],
-  mqtt: ["clientId", "version", "topics", "lastWill", "properties", "messages"],
-  mcp: ["transport", "command", "env", "message"],
-  llm: ["config", "userPrompts", "systemPrompts", "mcpConfig", "enabledTools"]
-};
-function addProtocolFields(request, yamlObj) {
-  const requestType = request.type || "http";
-  const fields = PROTOCOL_FIELDS[requestType] || [];
-  for (const field of fields) {
-    const value = request[field];
-    if (field === "queryParams" || field === "pathVariables") {
-      if (requestType === "http" && shouldInclude(value)) {
-        yamlObj[field] = value;
-      } else if ((requestType === "websocket" || requestType === "socketio") && shouldInclude(value)) {
-        yamlObj[field] = value;
-      }
-    } else if (field === "message" && requestType === "mcp") {
-      if (shouldInclude(value)) {
-        yamlObj[field] = value;
-      }
-    } else if (field === "version" && requestType === "mqtt") {
-      if (value !== void 0) {
-        yamlObj[field] = value;
-      }
-    } else if (Array.isArray(value)) {
-      if (shouldInclude(value)) {
-        yamlObj[field] = value;
-      }
-    } else if (typeof value === "object" && value !== null) {
-      if (shouldInclude(value)) {
-        yamlObj[field] = value;
-      }
-    } else if (value !== void 0 && value !== null) {
-      yamlObj[field] = value;
-    }
-  }
-}
-function requestToYaml(request) {
-  const yamlObj = {
-    type: request.type || "http",
-    name: request.name
+function createBaseNode(item, scope, fallbackName) {
+  const node = {
+    name: toOptionalString(item.name) ?? fallbackName
   };
-  if (request.url) {
-    yamlObj.url = request.url;
+  const description = extractDescription(item.description);
+  if (description) {
+    node.description = description;
   }
-  if (request.method) {
-    yamlObj.method = request.method;
+  const id = toOptionalString(item.id);
+  if (id) {
+    node.id = id;
   }
-  if (shouldInclude(request.headers)) {
-    yamlObj.headers = request.headers;
+  const auth = transformAuth(item.auth);
+  if (auth) {
+    node.auth = auth;
   }
-  addProtocolFields(request, yamlObj);
-  if (hasBodyContent(request.body)) {
-    yamlObj.body = request.body;
-  }
-  if (shouldIncludeAuth(request.auth)) {
-    yamlObj.auth = request.auth;
-  }
-  if (request.settings) {
-    yamlObj.settings = request.settings;
-  }
-  const scripts = processScripts(request.scripts);
+  const scripts = transformScripts(item.event, scope);
   if (scripts) {
-    yamlObj.scripts = scripts;
+    node.scripts = scripts;
   }
-  if (shouldInclude(request.examples)) {
-    yamlObj.examples = request.examples;
-  }
-  if (shouldInclude(request.description)) {
-    yamlObj.description = request.description;
-  }
-  if (request.id) {
-    yamlObj.id = request.id;
-  }
-  return yamlObj;
+  return node;
 }
-function convertContentToBlockScalar(yamlStr) {
-  return yamlStr.replace(
-    /^(\s+)(content:\s+)"((?:[^"\\]|\\.)*)"$/gm,
-    (match, indent, key, escapedContent) => {
-      const looksLikeJson = escapedContent.trim().startsWith("{") || escapedContent.trim().startsWith("[");
-      if (looksLikeJson && /"([^"]*\\(?:\\[nrtbfu]|u[0-9a-fA-F]{4}))/g.test(escapedContent)) {
-        return match;
-      }
-      let unescaped;
-      try {
-        unescaped = JSON.parse(`"${escapedContent}"`);
-      } catch (e) {
-        unescaped = escapedContent.replace(/\\n/g, "\n").replace(/\\t/g, "	").replace(/\\"/g, '"').replace(/\\\\/g, "\\").replace(/\\r/g, "\r");
-      }
-      if (shouldUseBlockScalar(unescaped)) {
-        const contentLines = unescaped.split("\n");
-        const blockScalar = `${indent}${key}|
-${contentLines.map((line) => `${indent}  ${line}`).join("\n")}`;
-        return blockScalar;
-      }
-      return match;
-    }
+function transformRequestNode(item) {
+  const request = item.request;
+  if (!request) {
+    return null;
+  }
+  const method = toOptionalString(request.method) ?? "GET";
+  const url = transformUrl(request.url);
+  if (method === "VIEW" || !url.trim()) {
+    return null;
+  }
+  const node = {
+    ...createBaseNode(
+      {
+        name: item.name,
+        description: item.description,
+        id: item.id,
+        auth: request.auth ?? item.auth,
+        event: [...asArray(item.event), ...asArray(request.event)]
+      },
+      "request",
+      "Request"
+    ),
+    kind: "request",
+    type: "http",
+    url,
+    method
+  };
+  const headers = asArray(request.header).map(
+    (entry) => transformKeyValue(entry)
   );
-}
-async function processRequest(request, parentDir, usedNames = /* @__PURE__ */ new Set()) {
-  let sanitizedName = sanitizeName(request.name);
-  let fileName = `${sanitizedName}.request.yaml`;
-  let counter = 1;
-  while (usedNames.has(fileName)) {
-    fileName = `${sanitizedName}_${counter}.request.yaml`;
-    counter++;
+  if (headers.length > 0) {
+    node.headers = headers;
   }
-  usedNames.add(fileName);
-  const filePath = join(parentDir, fileName);
-  const yamlObj = requestToYaml(request);
-  let yamlContent = dump(yamlObj, YAML_DUMP_OPTIONS);
-  yamlContent = convertContentToBlockScalar(yamlContent);
-  yamlContent = convertScriptCodeArrayToBlockScalar(yamlContent);
-  await writeFile(filePath, yamlContent, "utf-8");
-  return fileName;
-}
-function createBaseYaml(item, itemType) {
-  const yamlObj = {
-    type: itemType,
-    name: item.name
-  };
-  if (shouldInclude(item.description)) {
-    yamlObj.description = item.description;
-  }
-  if (item.id) {
-    yamlObj.id = item.id;
-  }
-  if (shouldInclude(item.variables)) {
-    yamlObj.variables = item.variables;
-  }
-  if (shouldIncludeAuth(item.auth)) {
-    yamlObj.auth = item.auth;
-  }
-  const scripts = processScripts(item.scripts);
-  if (scripts) {
-    yamlObj.scripts = scripts;
-  }
-  return yamlObj;
-}
-async function processItems(items, parentDir, usedNames = /* @__PURE__ */ new Set()) {
-  const itemRefs = [];
-  if (!shouldInclude(items)) {
-    return itemRefs;
-  }
-  for (const item of items) {
-    if (item.type === "folder") {
-      let folderName = sanitizeName(item.name);
-      let folderRef = `./${folderName}/folder.yaml`;
-      let counter = 1;
-      while (usedNames.has(folderRef)) {
-        folderRef = `./${folderName}_${counter}/folder.yaml`;
-        counter++;
-      }
-      usedNames.add(folderRef);
-      if (counter > 1) {
-        folderName = `${folderName}_${counter - 1}`;
-      }
-      await processFolder(item, parentDir, folderName);
-      itemRefs.push({ ref: folderRef });
-    } else if (REQUEST_TYPES.has(item.type)) {
-      const fileName = await processRequest(item, parentDir, usedNames);
-      itemRefs.push({ ref: `./${fileName}` });
-    }
-  }
-  return itemRefs;
-}
-async function processFolder(folder, parentDir, folderName = null) {
-  const sanitizedName = folderName || sanitizeName(folder.name);
-  const folderDir = join(parentDir, sanitizedName);
-  await mkdir(folderDir, { recursive: true });
-  const folderYaml = createBaseYaml(folder, "folder");
-  const usedNames = /* @__PURE__ */ new Set();
-  const items = await processItems(folder.items, folderDir, usedNames);
-  if (items.length > 0) {
-    folderYaml.items = items;
-  }
-  const folderYamlPath = join(folderDir, "folder.yaml");
-  let yamlContent = dump(folderYaml, YAML_DUMP_OPTIONS);
-  yamlContent = convertScriptCodeArrayToBlockScalar(yamlContent);
-  await writeFile(folderYamlPath, yamlContent, "utf-8");
-  return sanitizedName;
-}
-async function readCollection(collectionDir) {
-  const collectionJsonPath = join(collectionDir, "_collection.json");
-  const collectionYamlPath = join(collectionDir, "_collection.yaml");
-  try {
-    const content = await readFile(collectionJsonPath, "utf-8");
-    return JSON.parse(content);
-  } catch (e) {
-    try {
-      const content = await readFile(collectionYamlPath, "utf-8");
-      return load(content);
-    } catch (e2) {
-      return null;
-    }
-  }
-}
-async function splitCollection(collectionDir) {
-  const collection = await readCollection(collectionDir);
-  if (!collection) {
-    console.log(
-      `   \u26A0\uFE0F  No _collection.json or _collection.yaml found, skipping`
+  if (request.url && typeof request.url === "object") {
+    const queryParams = asArray(request.url.query).map(
+      (entry) => transformKeyValue(entry, { allowNullValue: true })
     );
-    return;
+    if (queryParams.length > 0) {
+      node.queryParams = queryParams;
+    }
+    const pathVariables = asArray(request.url.variable).map(
+      (entry) => transformKeyValue(entry)
+    );
+    if (pathVariables.length > 0) {
+      node.pathVariables = pathVariables;
+    }
   }
-  const collectionYaml = {
-    $schema: collection.$schema,
-    ...createBaseYaml(collection, "collection")
+  const body = transformBody(request.body);
+  if (body) {
+    node.body = body;
+  }
+  const examples = transformResponses(
+    asArray(request.response).length > 0 ? request.response : item.response
+  );
+  if (examples) {
+    node.examples = examples;
+  }
+  return node;
+}
+function transformItem(item) {
+  if (item.request) {
+    return transformRequestNode(item);
+  }
+  const children = asArray(item.item).map((child) => transformItem(child)).filter((child) => Boolean(child));
+  if (children.length === 0 && !extractDescription(item.description) && !toOptionalString(item.id) && !transformAuth(item.auth) && !transformScripts(item.event, "collection")) {
+    return null;
+  }
+  return {
+    ...createBaseNode(item, "collection", "Folder"),
+    kind: "folder",
+    items: children
   };
-  const usedNames = /* @__PURE__ */ new Set();
-  const items = await processItems(collection.items, collectionDir, usedNames);
+}
+function transformCollection(collection) {
+  const node = {
+    ...createBaseNode(
+      {
+        name: collection.info?.name,
+        description: collection.info?.description,
+        id: collection.info?._postman_id,
+        auth: collection.auth,
+        event: collection.event
+      },
+      "collection",
+      "Untitled Collection"
+    ),
+    kind: "collection",
+    $schema: "https://schema.postman.com/json/draft-2020-12/collection/v3.0.0/",
+    items: asArray(collection.item).map((item) => transformItem(item)).filter((item) => Boolean(item))
+  };
+  const variables = asArray(collection.variable).map(
+    (entry) => transformKeyValue(entry)
+  );
+  if (variables.length > 0) {
+    node.variables = variables;
+  }
+  return node;
+}
+function buildBaseDescriptor(node, type2) {
+  const descriptor = {
+    type: type2,
+    name: node.name
+  };
+  if (node.description) {
+    descriptor.description = node.description;
+  }
+  if (node.id) {
+    descriptor.id = node.id;
+  }
+  if (node.auth) {
+    descriptor.auth = node.auth;
+  }
+  if (node.scripts && node.scripts.length > 0) {
+    descriptor.scripts = node.scripts;
+  }
+  return descriptor;
+}
+function buildRequestDescriptor(node) {
+  const descriptor = {
+    type: node.type,
+    name: node.name,
+    url: node.url,
+    method: node.method
+  };
+  if (node.description) {
+    descriptor.description = node.description;
+  }
+  if (node.id) {
+    descriptor.id = node.id;
+  }
+  if (node.headers && node.headers.length > 0) {
+    descriptor.headers = node.headers;
+  }
+  if (node.queryParams && node.queryParams.length > 0) {
+    descriptor.queryParams = node.queryParams;
+  }
+  if (node.pathVariables && node.pathVariables.length > 0) {
+    descriptor.pathVariables = node.pathVariables;
+  }
+  if (node.body) {
+    descriptor.body = node.body;
+  }
+  if (node.auth) {
+    descriptor.auth = node.auth;
+  }
+  if (node.scripts && node.scripts.length > 0) {
+    descriptor.scripts = node.scripts;
+  }
+  if (node.examples && node.examples.length > 0) {
+    descriptor.examples = node.examples;
+  }
+  return descriptor;
+}
+async function writeRequestNode(node, parentDir, usedRefs) {
+  const { ref } = buildUniqueRef(node.name, "request", usedRefs);
+  await fs.writeFile(
+    path.join(parentDir, ref.replace("./", "")),
+    stringifyYaml(buildRequestDescriptor(node)),
+    "utf8"
+  );
+  return { ref };
+}
+async function writeFolderNode(node, parentDir, usedRefs) {
+  const { ref, name } = buildUniqueRef(node.name, "folder", usedRefs);
+  const folderDir = path.join(parentDir, name);
+  await fs.mkdir(folderDir, { recursive: true });
+  const items = await writeItems(node.items, folderDir);
+  const descriptor = buildBaseDescriptor(node, "folder");
   if (items.length > 0) {
-    collectionYaml.items = items;
+    descriptor.items = items;
   }
-  const newCollectionYamlPath = join(collectionDir, "collection.yaml");
-  let yamlContent = dump(collectionYaml, YAML_DUMP_OPTIONS);
-  yamlContent = convertScriptCodeArrayToBlockScalar(yamlContent);
-  await writeFile(newCollectionYamlPath, yamlContent, "utf-8");
+  await fs.writeFile(path.join(folderDir, "folder.yaml"), stringifyYaml(descriptor), "utf8");
+  return { ref };
 }
-async function splitExamples() {
-  try {
-    try {
-      await stat(v3ExamplesDir);
-    } catch (error) {
-      console.log("\u26A0\uFE0F  examples/v3/ directory not found");
-      console.log('   Run "npm run examples:convert" first');
-      return;
+async function writeItems(items, parentDir) {
+  const refs = [];
+  const usedRefs = /* @__PURE__ */ new Set();
+  for (const item of items) {
+    if (item.kind === "folder") {
+      refs.push(await writeFolderNode(item, parentDir, usedRefs));
+    } else {
+      refs.push(await writeRequestNode(item, parentDir, usedRefs));
     }
-    const entries = await readdir(v3ExamplesDir, { withFileTypes: true });
-    const collectionDirs = entries.filter((entry) => entry.isDirectory()).map((entry) => join(v3ExamplesDir, entry.name));
-    if (collectionDirs.length === 0) {
-      console.log("\u26A0\uFE0F  No collection directories found in examples/v3/");
-      return;
-    }
-    console.log(`\u{1F4C1} Splitting ${collectionDirs.length} collection(s)...`);
-    for (const collectionDir of collectionDirs) {
-      const collectionName = basename(collectionDir);
-      try {
-        await splitCollection(collectionDir);
-        console.log(`  \u2713 ${collectionName}`);
-      } catch (error) {
-        console.log(`  \u274C ${collectionName}: ${error.message}`);
-      }
-    }
-    console.log(`\u2705 Split ${collectionDirs.length} collection(s)`);
-  } catch (error) {
-    console.error("\u274C Error:", error.message);
-    if (error.stack) {
-      console.error(error.stack);
-    }
-    process.exit(1);
   }
+  return refs;
 }
-splitExamples();
 async function convertAndSplitCollection(v2Collection, outputDir) {
-  const v3Collection = transformCollection(v2Collection);
-  const collectionYaml = {
-    $schema: v3Collection.$schema,
-    ...createBaseYaml(v3Collection, "collection")
-  };
-  const usedNames = /* @__PURE__ */ new Set();
-  const items = await processItems(v3Collection.items, outputDir, usedNames);
-  if (items && items.length > 0) {
-    collectionYaml.items = items;
-  }
-  const yamlStr = dump(collectionYaml, { indent: 2, quotingType: '"', noRefs: true, sortKeys: true });
+  const collection = transformCollection(v2Collection || {});
   await fs.mkdir(outputDir, { recursive: true });
-  await fs.writeFile(path.join(outputDir, "collection.yaml"), yamlStr);
+  const descriptor = {
+    $schema: collection.$schema,
+    ...buildBaseDescriptor(collection, "collection")
+  };
+  if (collection.variables && collection.variables.length > 0) {
+    descriptor.variables = collection.variables;
+  }
+  const items = await writeItems(collection.items, outputDir);
+  if (items.length > 0) {
+    descriptor.items = items;
+  }
+  await fs.writeFile(path.join(outputDir, "collection.yaml"), stringifyYaml(descriptor), "utf8");
 }
 
 // src/lib/ci-workflow-template.ts
@@ -24195,6 +23786,24 @@ function writeJsonFile(path2, content, normalize = false) {
   const data = normalize ? stripVolatileFields(content) : content;
   (0, import_node_fs.writeFileSync)(path2, JSON.stringify(data, null, 2));
 }
+function buildResourcesManifest(workspaceId, collectionMap) {
+  const manifest = {
+    workspace: { id: workspaceId }
+  };
+  if (Object.keys(collectionMap).length > 0) {
+    manifest.cloudResources = {
+      collections: collectionMap
+    };
+  }
+  manifest.localResources = {
+    specs: ["../index.yaml"]
+  };
+  return dump(manifest, {
+    lineWidth: -1,
+    noRefs: true,
+    sortKeys: false
+  });
+}
 async function exportArtifacts(inputs, dependencies, envUids) {
   if (!inputs.workspaceId) {
     return;
@@ -24207,21 +23816,27 @@ async function exportArtifacts(inputs, dependencies, envUids) {
   ensureDir(mocksDir);
   ensureDir(".postman");
   ensureDir(".github/workflows");
-  const manifestCollections = [];
+  const manifestCollections = {};
   if (inputs.baselineCollectionId) {
-    const col = await dependencies.postman.getCollection(inputs.baselineCollectionId);
+    const col = stripVolatileFields(
+      await dependencies.postman.getCollection(inputs.baselineCollectionId)
+    );
     await convertAndSplitCollection(col, `${collectionsDir}/[Baseline] ${inputs.projectName}`);
-    manifestCollections.push(`    ../${collectionsDir}/[Baseline] ${inputs.projectName}: ${inputs.baselineCollectionId}`);
+    manifestCollections[`../${collectionsDir}/[Baseline] ${inputs.projectName}`] = inputs.baselineCollectionId;
   }
   if (inputs.smokeCollectionId) {
-    const col = await dependencies.postman.getCollection(inputs.smokeCollectionId);
+    const col = stripVolatileFields(
+      await dependencies.postman.getCollection(inputs.smokeCollectionId)
+    );
     await convertAndSplitCollection(col, `${collectionsDir}/[Smoke] ${inputs.projectName}`);
-    manifestCollections.push(`    ../${collectionsDir}/[Smoke] ${inputs.projectName}: ${inputs.smokeCollectionId}`);
+    manifestCollections[`../${collectionsDir}/[Smoke] ${inputs.projectName}`] = inputs.smokeCollectionId;
   }
   if (inputs.contractCollectionId) {
-    const col = await dependencies.postman.getCollection(inputs.contractCollectionId);
+    const col = stripVolatileFields(
+      await dependencies.postman.getCollection(inputs.contractCollectionId)
+    );
     await convertAndSplitCollection(col, `${collectionsDir}/[Contract] ${inputs.projectName}`);
-    manifestCollections.push(`    ../${collectionsDir}/[Contract] ${inputs.projectName}: ${inputs.contractCollectionId}`);
+    manifestCollections[`../${collectionsDir}/[Contract] ${inputs.projectName}`] = inputs.contractCollectionId;
   }
   for (const [envName, envUid] of Object.entries(envUids)) {
     writeJsonFile(
@@ -24237,23 +23852,7 @@ async function exportArtifacts(inputs, dependencies, envUids) {
     environmentPaths: [`${inputs.artifactDir}/environments/`],
     mockPaths: [`${inputs.artifactDir}/mocks/`]
   });
-  let manifestYaml = `workspace:
-  id: ${inputs.workspaceId}
-`;
-  if (manifestCollections.length > 0) {
-    manifestYaml += `cloudResources:
-  collections:
-${manifestCollections.join("\n")}
-`;
-  }
-  manifestYaml += `localResources:
-  specs:
-    - ../index.yaml
-`;
-  (0, import_node_fs.writeFileSync)(
-    ".postman/resources.yaml",
-    manifestYaml
-  );
+  (0, import_node_fs.writeFileSync)(".postman/resources.yaml", buildResourcesManifest(inputs.workspaceId, manifestCollections));
 }
 function renderCiWorkflow(inputs) {
   if (inputs.ciWorkflowBase64) {

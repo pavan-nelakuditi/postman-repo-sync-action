@@ -9,7 +9,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "rm -rf dist && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.cjs",
+    "build": "npm run typecheck && rm -rf dist && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.cjs",
     "check:dist": "npm run build && git diff --exit-code -- dist/index.cjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json"
