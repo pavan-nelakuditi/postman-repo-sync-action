@@ -17,7 +17,7 @@ import {
   type InternalIntegrationAdapter
 } from './lib/postman/internal-integration-adapter.js';
 import { PostmanAssetsClient } from './lib/postman/postman-assets-client.js';
-import { createSecretMasker } from './lib/secrets.js';
+import { createSecretMasker, type SecretMasker } from './lib/secrets.js';
 
 type EnvironmentValues = {
   key: string;
@@ -53,6 +53,7 @@ export interface ResolvedInputs {
   githubAuthMode: 'github_token_first' | 'fallback_pat_first' | 'app_token';
   ciWorkflowBase64: string;
   generateCiWorkflow: boolean;
+  monitorType: string;
   ciWorkflowPath: string;
 }
 
@@ -252,6 +253,7 @@ export function readActionInputs(actionCore: Pick<CoreLike, 'getInput' | 'setSec
     ),
     ciWorkflowBase64: readInput(actionCore, 'ci-workflow-base64'),
     generateCiWorkflow: parseBooleanInput(readInput(actionCore, 'generate-ci-workflow'), true),
+    monitorType: readInput(actionCore, 'monitor-type') || 'cloud',
     ciWorkflowPath: readInput(actionCore, 'ci-workflow-path') || '.github/workflows/ci.yml'
   };
 }
@@ -384,7 +386,9 @@ async function exportArtifacts(
   ensureDir(environmentsDir);
   ensureDir(mocksDir);
   ensureDir('.postman');
-  ensureDir('.github/workflows');
+  if (inputs.generateCiWorkflow) {
+    ensureDir('.github/workflows');
+  }
 
   const manifestCollections: Record<string, string> = {};
 
@@ -524,20 +528,17 @@ async function commitAndPushGeneratedFiles(
     writeFileSync(inputs.ciWorkflowPath, ciWorkflow);
   }
 
-  if (existsSync('.github/workflows/provision.yml')) {
+  const provisionExists = existsSync('.github/workflows/provision.yml');
+  if (provisionExists) {
     rmSync('.github/workflows/provision.yml');
   }
 
   const stagePaths = [
     inputs.artifactDir,
     '.postman',
-    inputs.generateCiWorkflow ? inputs.ciWorkflowPath : null
-  ].filter((entry) => typeof entry === 'string' && existsSync(entry)) as string[];
-
-  // also add .github/workflows directory for provision.yml removal
-  if (!stagePaths.includes('.github/workflows') && existsSync('.github/workflows')) {
-    stagePaths.push('.github/workflows');
-  }
+    inputs.generateCiWorkflow ? inputs.ciWorkflowPath : null,
+    provisionExists ? '.github/workflows/provision.yml' : null
+  ].filter((entry) => typeof entry === 'string' && (existsSync(entry) || entry === '.github/workflows/provision.yml')) as string[];
 
   const effectiveStagePaths = stagePaths.length > 0 ? stagePaths : ['.'];
 
@@ -601,25 +602,62 @@ export async function runRepoSync(
   ) {
     const mockEnvUid = envUids.dev || envUids.prod || Object.values(envUids)[0];
     if (mockEnvUid) {
-      const mock = await dependencies.postman.createMock(
-        inputs.workspaceId,
-        `${inputs.projectName} Mock`,
-        inputs.baselineCollectionId,
-        mockEnvUid
-      );
-      outputs['mock-url'] = mock.url;
+      let existingMockUrl = '';
+      if (dependencies.github) {
+        existingMockUrl = await dependencies.github.getRepositoryVariable('MOCK_URL').catch(() => '') || '';
+      }
+      
+      if (existingMockUrl) {
+        outputs['mock-url'] = existingMockUrl;
+        dependencies.core.info(`Skipping mock creation, existing mock found: ${existingMockUrl}`);
+      } else {
+        const mock = await dependencies.postman.createMock(
+          inputs.workspaceId,
+          `${inputs.projectName} Mock`,
+          inputs.baselineCollectionId,
+          mockEnvUid
+        );
+        outputs['mock-url'] = mock.url;
+      }
     }
   }
 
   if (inputs.workspaceId && inputs.smokeCollectionId && Object.keys(envUids).length > 0) {
     const monitorEnvUid = envUids.prod || envUids.dev || Object.values(envUids)[0];
-    if (monitorEnvUid) {
-      outputs['monitor-id'] = await dependencies.postman.createMonitor(
-        inputs.workspaceId,
-        `${inputs.projectName} - Smoke Monitor`,
-        inputs.smokeCollectionId,
-        monitorEnvUid
-      );
+    let cronSchedule = '0 0 * * *';
+    let disableMonitor = false;
+    
+    if (dependencies.github) {
+      const storedCron = await dependencies.github.getRepositoryVariable('MONITOR_CRON_SCHEDULE').catch(() => '');
+      if (storedCron) {
+        if (storedCron.toLowerCase() === 'disabled' || storedCron.toLowerCase() === 'off') {
+          disableMonitor = true;
+        } else {
+          cronSchedule = storedCron;
+        }
+      }
+    }
+
+    if (monitorEnvUid && !disableMonitor && inputs.monitorType !== 'cli') {
+      let existingMonitorId = '';
+      if (dependencies.github) {
+        existingMonitorId = await dependencies.github.getRepositoryVariable('SMOKE_MONITOR_UID').catch(() => '') || '';
+      }
+
+      if (existingMonitorId) {
+        outputs['monitor-id'] = existingMonitorId;
+        dependencies.core.info(`Skipping monitor creation, existing monitor found: ${existingMonitorId}`);
+      } else {
+        outputs['monitor-id'] = await dependencies.postman.createMonitor(
+          inputs.workspaceId,
+          `${inputs.projectName} - Smoke Monitor`,
+          inputs.smokeCollectionId,
+          monitorEnvUid,
+          cronSchedule
+        );
+      }
+    } else if (disableMonitor) {
+      dependencies.core.info('Monitor creation skipped because MONITOR_CRON_SCHEDULE is disabled.');
     }
   }
 
@@ -661,6 +699,87 @@ export async function runRepoSync(
   return outputs;
 }
 
+async function resolvePostmanApiKeyAndTeamId(
+  inputs: ResolvedInputs,
+  actionCore: CoreLike,
+  actionExec: ExecLike,
+  masker: SecretMasker
+): Promise<{ apiKey: string; teamId: string }> {
+  let apiKey = inputs.postmanApiKey;
+  let teamId = process.env.POSTMAN_TEAM_ID || '';
+  let keyValid = false;
+
+  if (apiKey) {
+    const tempClient = new PostmanAssetsClient({ apiKey, secretMasker: masker });
+    try {
+      const me = await tempClient.getMe();
+      if (me && me.user) {
+        keyValid = true;
+        if (!teamId && typeof me.user === 'object' && 'teamId' in me.user && me.user.teamId) {
+          teamId = String(me.user.teamId);
+        }
+      }
+    } catch (error: any) {
+      if (error?.status === 401 || error?.status === 403) {
+        actionCore.warning('Provided postman-api-key is invalid or expired.');
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  if (!keyValid) {
+    if (!inputs.postmanAccessToken) {
+      throw new Error('postman-api-key is missing or invalid, and no postman-access-token provided to generate a new one.');
+    }
+
+    actionCore.info('Generating a new Postman API key using postman-access-token...');
+
+    const internalIntegration = createInternalIntegrationAdapter({
+      accessToken: inputs.postmanAccessToken,
+      backend: inputs.integrationBackend,
+      teamId,
+      secretMasker: masker
+    });
+
+    const keyName = `repo-sync-action-${Date.now()}`;
+    apiKey = await internalIntegration.createApiKey(keyName);
+    actionCore.setSecret(apiKey);
+
+    if (!teamId) {
+       const tempClient = new PostmanAssetsClient({ apiKey, secretMasker: masker });
+       const autoTeamId = await tempClient.getAutoDerivedTeamId();
+       if (autoTeamId) teamId = autoTeamId;
+    }
+
+    if (inputs.githubToken || inputs.ghFallbackToken) {
+      actionCore.info('Persisting new Postman API key to GitHub repository secrets...');
+      const ghToken = inputs.ghFallbackToken || inputs.githubToken;
+      const repo = process.env.GITHUB_REPOSITORY;
+      if (repo) {
+        try {
+          const ghCommand = await actionExec.getExecOutput('gh', [
+            'secret', 'set', 'POSTMAN_API_KEY', '--repo', repo
+          ], {
+            input: Buffer.from(apiKey),
+            env: { ...process.env, GH_TOKEN: ghToken },
+            ignoreReturnCode: true
+          });
+          if (ghCommand.exitCode !== 0) {
+            actionCore.warning(`Failed to save POSTMAN_API_KEY secret: ${ghCommand.stderr}`);
+          }
+        } catch (e: any) {
+          actionCore.warning(`Error saving POSTMAN_API_KEY secret: ${e.message}`);
+        }
+      }
+    } else {
+      actionCore.warning('No GitHub token provided; cannot save generated POSTMAN_API_KEY secret.');
+    }
+  }
+
+  return { apiKey, teamId };
+}
+
 export async function runAction(
   actionCore: CoreLike = core,
   actionExec: ExecLike = exec
@@ -672,17 +791,20 @@ export async function runAction(
     inputs.githubToken,
     inputs.ghFallbackToken
   ]);
+
+  const resolved = await resolvePostmanApiKeyAndTeamId(inputs, actionCore, actionExec, masker);
+
   const postman = new PostmanAssetsClient({
-    apiKey: inputs.postmanApiKey,
+    apiKey: resolved.apiKey,
     secretMasker: masker
   });
 
   const repository = process.env.GITHUB_REPOSITORY || '';
   const github =
-    repository && inputs.githubToken
+    repository && (inputs.githubToken || inputs.ghFallbackToken)
       ? new GitHubApiClient({
         repository,
-        token: inputs.githubToken,
+        token: inputs.githubToken || inputs.ghFallbackToken,
         fallbackToken: inputs.ghFallbackToken,
         authMode: inputs.githubAuthMode,
         secretMasker: masker
@@ -712,7 +834,7 @@ export async function runAction(
       ? createInternalIntegrationAdapter({
         accessToken: inputs.postmanAccessToken,
         backend: inputs.integrationBackend,
-        teamId: process.env.POSTMAN_TEAM_ID || '',
+        teamId: resolved.teamId,
         secretMasker: masker
       })
       : undefined;

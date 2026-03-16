@@ -82,6 +82,11 @@ export const postmanRepoSyncActionContract: {
       description: 'Baseline collection ID used for exported artifacts and mock server creation.',
       required: false
     },
+    'monitor-type': {
+      description: 'Type of monitor to create ("cloud" or "cli"). "cli" will skip cloud monitor creation and rely on the CI workflow.',
+      required: false,
+      default: 'cloud'
+    },
     'smoke-collection-id': {
       description: 'Smoke collection ID used for monitor creation.',
       required: false
@@ -155,7 +160,7 @@ export const postmanRepoSyncActionContract: {
     },
     'postman-api-key': {
       description: 'Postman API key used for environment, mock, and monitor operations.',
-      required: true
+      required: false
     },
     'postman-access-token': {
       description: 'Postman access token used for Bifrost and system environment association.',

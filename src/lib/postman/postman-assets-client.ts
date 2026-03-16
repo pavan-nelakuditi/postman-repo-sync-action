@@ -107,7 +107,8 @@ export class PostmanAssetsClient {
     workspaceId: string,
     name: string,
     collectionUid: string,
-    environmentUid: string
+    environmentUid: string,
+    cronSchedule: string = '0 0 * * *'
   ): Promise<string> {
     const response = await this.request(`/monitors?workspace=${workspaceId}`, {
       method: 'POST',
@@ -117,7 +118,7 @@ export class PostmanAssetsClient {
           collection: collectionUid,
           environment: environmentUid,
           schedule: {
-            cron: '*/5 * * * *',
+            cron: cronSchedule,
             timezone: 'UTC'
           }
         }
@@ -170,5 +171,22 @@ export class PostmanAssetsClient {
   async getEnvironment(uid: string): Promise<any> {
     const response = await this.request(`/environments/${uid}`);
     return response?.environment;
+  }
+
+  async getMe(): Promise<Record<string, unknown> | null> {
+    return this.request('/me', { method: 'GET' }) as Promise<Record<string, unknown> | null>;
+  }
+
+  async getAutoDerivedTeamId(): Promise<string | undefined> {
+    try {
+      const data = await this.getMe();
+      const user = data?.user;
+      if (user && typeof user === 'object' && 'teamId' in user && user.teamId) {
+        return String(user.teamId);
+      }
+    } catch (e) {
+      // ignore
+    }
+    return undefined;
   }
 }

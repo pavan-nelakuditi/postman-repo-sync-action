@@ -21,6 +21,7 @@ describe('postman-repo-sync-action contract', () => {
       'project-name',
       'workspace-id',
       'baseline-collection-id',
+      'monitor-type',
       'smoke-collection-id',
       'contract-collection-id',
       'environments-json',

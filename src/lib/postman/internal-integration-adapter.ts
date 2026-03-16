@@ -24,6 +24,9 @@ export interface InternalIntegrationAdapter {
     workspaceId: string,
     repoUrl: string
   ): Promise<void>;
+  createApiKey(
+    name: string
+  ): Promise<string>;
 }
 
 class BifrostInternalIntegrationAdapter implements InternalIntegrationAdapter {
@@ -98,28 +101,68 @@ class BifrostInternalIntegrationAdapter implements InternalIntegrationAdapter {
       }
     };
 
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-access-token': this.accessToken
+    };
+    if (this.teamId) {
+      headers['x-entity-team-id'] = this.teamId;
+    }
+
     const response = await this.fetchImpl(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-access-token': this.accessToken,
-        'x-entity-team-id': this.teamId
-      },
+      headers,
       body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
       throw await HttpError.fromResponse(response, {
         method: 'POST',
-        requestHeaders: {
-          'Content-Type': 'application/json',
-          'x-access-token': this.accessToken,
-          'x-entity-team-id': this.teamId
-        },
+        requestHeaders: headers,
         secretValues: [this.accessToken],
         url
       });
     }
+  }
+
+  async createApiKey(name: string): Promise<string> {
+    const url = 'https://bifrost-premium-https-v4.gw.postman.com/ws/proxy';
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-access-token': this.accessToken
+    };
+    if (this.teamId) {
+      headers['x-entity-team-id'] = this.teamId;
+    }
+
+    const payload = {
+      service: 'identity',
+      method: 'POST',
+      path: '/api/keys',
+      body: { apikey: { name, type: 'v2' } }
+    };
+
+    const response = await this.fetchImpl(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw await HttpError.fromResponse(response, {
+        method: 'POST',
+        requestHeaders: headers,
+        secretValues: [this.accessToken],
+        url
+      });
+    }
+
+    const data = await response.json() as any;
+    if (!data?.apikey?.key) {
+      throw new Error(`Failed to extract API key from Bifrost response: ${JSON.stringify(data)}`);
+    }
+
+    return data.apikey.key;
   }
 }
 

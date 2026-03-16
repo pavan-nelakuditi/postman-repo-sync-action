@@ -87,6 +87,7 @@ Collections are exported in the Postman Collection v3 format, producing a multi-
 | `project-name` | | Service name used for environments, mock servers, and monitors. |
 | `workspace-id` | | Workspace identifier used for workspace-link and export metadata. |
 | `baseline-collection-id` | | Baseline collection exported into the repo and used for mock generation. |
+| `monitor-type` | `cloud` | Type of monitor to create (`cloud` or `cli`). `cli` uses GitHub Actions cron.
 | `smoke-collection-id` | | Smoke collection used for monitor creation. |
 | `contract-collection-id` | | Contract collection exported into the repo. |
 | `environments-json` | `["prod"]` | Environment slugs to create or update. |

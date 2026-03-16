@@ -41,6 +41,7 @@ function createInputs(overrides: Partial<ResolvedInputs> = {}): ResolvedInputs {
     githubAuthMode: 'github_token_first',
     ciWorkflowBase64: '',
     generateCiWorkflow: true,
+    monitorType: 'cloud',
     ciWorkflowPath: '.github/workflows/ci.yml',
     ...overrides
   };
@@ -361,9 +362,13 @@ describe('repo sync action', () => {
     expect(existsSync('.github/workflows/postman-sync.yml')).toBe(false);
     expect(repoMutation.commitAndPush).toHaveBeenCalledWith(
       expect.objectContaining({
-        stagePaths: expect.arrayContaining(['postman', '.postman', '.github/workflows'])
+        stagePaths: expect.arrayContaining(['postman', '.postman'])
       })
     );
+
+    const callArgs = repoMutation.commitAndPush.mock.calls[0][0];
+    expect(callArgs.stagePaths).not.toContain('.github/workflows');
+    expect(callArgs.stagePaths).not.toContain('.github/workflows/provision.yml');
   });
 
   it('writes the generated CI workflow to a custom path when configured', async () => {
