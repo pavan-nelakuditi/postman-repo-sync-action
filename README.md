@@ -101,8 +101,8 @@ Collections are exported in the Postman Collection v3 format, producing a multi-
 | `artifact-dir` | `postman` | Root directory for exported Postman artifacts. |
 | `repo-write-mode` | `commit-and-push` | Generates files and pushes with current-ref semantics. |
 | `current-ref` | | Optional explicit ref override for detached checkouts. |
-| `committer-name` | `Postman FDE` | Commit author name for sync commits. |
-| `committer-email` | `fde@postman.com` | Commit author email for sync commits. |
+| `committer-name` | `Postman CSE` | Commit author name for sync commits. |
+| `committer-email` | `help@postman.com` | Commit author email for sync commits. |
 | `postman-api-key` | | Postman API key for environment, mock, and monitor work. |
 | `postman-access-token` | | Postman access token for Bifrost and system environment association. |
 | `github-token` | | GitHub token for repo variables and commits. |

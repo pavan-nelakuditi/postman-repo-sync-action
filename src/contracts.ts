@@ -55,8 +55,8 @@ export const postmanRepoSyncActionContract: {
     repoWriteMode: 'commit-and-push',
     workspaceLinkEnabled: true,
     environmentSyncEnabled: true,
-    committerName: 'Postman FDE',
-    committerEmail: 'fde@postman.com'
+    committerName: 'Postman CSE',
+    committerEmail: 'help@postman.com'
   },
   inputs: {
 
@@ -151,12 +151,12 @@ export const postmanRepoSyncActionContract: {
     'committer-name': {
       description: 'Git committer name for sync commits.',
       required: false,
-      default: 'Postman FDE'
+      default: 'Postman CSE'
     },
     'committer-email': {
       description: 'Git committer email for sync commits.',
       required: false,
-      default: 'fde@postman.com'
+      default: 'help@postman.com'
     },
     'postman-api-key': {
       description: 'Postman API key used for environment, mock, and monitor operations.',

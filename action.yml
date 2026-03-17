@@ -74,11 +74,11 @@ inputs:
   committer-name:
     description: Git committer name for sync commits.
     required: false
-    default: Postman FDE
+    default: Postman CSE
   committer-email:
     description: Git committer email for sync commits.
     required: false
-    default: fde@postman.com
+    default: help@postman.com
   postman-api-key:
     description: Postman API key used for environment, mock, and monitor operations.
     required: false
