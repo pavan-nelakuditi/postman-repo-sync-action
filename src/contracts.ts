@@ -95,6 +95,19 @@ export const postmanRepoSyncActionContract: {
       description: 'Contract collection ID used for exported artifacts.',
       required: false
     },
+    'monitor-id': {
+      description: 'Existing smoke monitor ID. When set, the action validates and reuses this monitor instead of creating a new one.',
+      required: false
+    },
+    'mock-url': {
+      description: 'Existing mock server URL. When set, the action validates and reuses this mock instead of creating a new one.',
+      required: false
+    },
+    'monitor-cron': {
+      description: "Cron expression for monitor scheduling (e.g. '0 */6 * * *'). When empty, the monitor is created in a disabled state.",
+      required: false,
+      default: ''
+    },
     'environments-json': {
       description: 'JSON array of environment slugs to create or update.',
       required: false,

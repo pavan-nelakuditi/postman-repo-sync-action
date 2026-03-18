@@ -56,6 +56,9 @@ export interface ResolvedInputs {
   monitorType: string;
   ciWorkflowPath: string;
   orgMode: boolean;
+  monitorId: string;
+  mockUrl: string;
+  monitorCron: string;
 }
 
 interface RepoSyncOutputs {
@@ -97,6 +100,12 @@ interface RepoSyncDependencies {
     | 'getCollection'
     | 'getEnvironment'
     | 'updateEnvironment'
+    | 'listMonitors'
+    | 'listMocks'
+    | 'monitorExists'
+    | 'mockExists'
+    | 'findMonitorByCollection'
+    | 'findMockByCollection'
   >;
   github?: Pick<GitHubApiClient, 'getRepositoryVariable' | 'setRepositoryVariable'>;
   internalIntegration?: Pick<
@@ -256,7 +265,10 @@ export function readActionInputs(actionCore: Pick<CoreLike, 'getInput' | 'setSec
     generateCiWorkflow: parseBooleanInput(readInput(actionCore, 'generate-ci-workflow'), true),
     monitorType: readInput(actionCore, 'monitor-type') || 'cloud',
     ciWorkflowPath: readInput(actionCore, 'ci-workflow-path') || '.github/workflows/ci.yml',
-    orgMode: parseBooleanInput(readInput(actionCore, 'org-mode'), false)
+    orgMode: parseBooleanInput(readInput(actionCore, 'org-mode'), false),
+    monitorId: readInput(actionCore, 'monitor-id'),
+    mockUrl: readInput(actionCore, 'mock-url'),
+    monitorCron: readInput(actionCore, 'monitor-cron')
   };
 }
 

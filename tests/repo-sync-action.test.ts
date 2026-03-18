@@ -44,6 +44,9 @@ function createInputs(overrides: Partial<ResolvedInputs> = {}): ResolvedInputs {
     monitorType: 'cloud',
     ciWorkflowPath: '.github/workflows/ci.yml',
     orgMode: false,
+    monitorId: '',
+    mockUrl: '',
+    monitorCron: '',
     ...overrides
   };
 }
@@ -189,7 +192,13 @@ describe('repo sync action', () => {
         .mockResolvedValueOnce(createCollectionFixture('[Baseline] core-payments'))
         .mockResolvedValueOnce(createCollectionFixture('[Smoke] core-payments'))
         .mockResolvedValueOnce(createCollectionFixture('[Contract] core-payments')),
-      getEnvironment: vi.fn().mockResolvedValue({ values: [] })
+      getEnvironment: vi.fn().mockResolvedValue({ values: [] }),
+      listMonitors: vi.fn().mockResolvedValue([]),
+      listMocks: vi.fn().mockResolvedValue([]),
+      monitorExists: vi.fn().mockResolvedValue(false),
+      mockExists: vi.fn().mockResolvedValue(false),
+      findMonitorByCollection: vi.fn().mockResolvedValue(null),
+      findMockByCollection: vi.fn().mockResolvedValue(null)
     };
     const github = {
       getRepositoryVariable: vi.fn().mockResolvedValue(''),
@@ -286,7 +295,13 @@ describe('repo sync action', () => {
       createMock: vi.fn().mockResolvedValue({ uid: 'mock-1', url: 'https://mock.pstmn.io' }),
       createMonitor: vi.fn().mockResolvedValue('mon-1'),
       getCollection: vi.fn().mockResolvedValue(createCollectionFixture('[Smoke] core-payments')),
-      getEnvironment: vi.fn().mockResolvedValue({ values: [] })
+      getEnvironment: vi.fn().mockResolvedValue({ values: [] }),
+      listMonitors: vi.fn().mockResolvedValue([]),
+      listMocks: vi.fn().mockResolvedValue([]),
+      monitorExists: vi.fn().mockResolvedValue(false),
+      mockExists: vi.fn().mockResolvedValue(false),
+      findMonitorByCollection: vi.fn().mockResolvedValue(null),
+      findMockByCollection: vi.fn().mockResolvedValue(null)
     };
     const github = {
       getRepositoryVariable: vi
@@ -328,7 +343,13 @@ describe('repo sync action', () => {
       createMock: vi.fn().mockResolvedValue({ uid: 'mock-1', url: 'https://mock.pstmn.io' }),
       createMonitor: vi.fn().mockResolvedValue('mon-1'),
       getCollection: vi.fn().mockResolvedValue(createCollectionFixture('[Smoke] core-payments')),
-      getEnvironment: vi.fn().mockResolvedValue({ values: [] })
+      getEnvironment: vi.fn().mockResolvedValue({ values: [] }),
+      listMonitors: vi.fn().mockResolvedValue([]),
+      listMocks: vi.fn().mockResolvedValue([]),
+      monitorExists: vi.fn().mockResolvedValue(false),
+      mockExists: vi.fn().mockResolvedValue(false),
+      findMonitorByCollection: vi.fn().mockResolvedValue(null),
+      findMockByCollection: vi.fn().mockResolvedValue(null)
     };
     const repoMutation = {
       commitAndPush: vi.fn().mockResolvedValue({
@@ -379,7 +400,13 @@ describe('repo sync action', () => {
       createMock: vi.fn().mockResolvedValue({ uid: 'mock-1', url: 'https://mock.pstmn.io' }),
       createMonitor: vi.fn().mockResolvedValue('mon-1'),
       getCollection: vi.fn().mockResolvedValue(createCollectionFixture('[Smoke] core-payments')),
-      getEnvironment: vi.fn().mockResolvedValue({ values: [] })
+      getEnvironment: vi.fn().mockResolvedValue({ values: [] }),
+      listMonitors: vi.fn().mockResolvedValue([]),
+      listMocks: vi.fn().mockResolvedValue([]),
+      monitorExists: vi.fn().mockResolvedValue(false),
+      mockExists: vi.fn().mockResolvedValue(false),
+      findMonitorByCollection: vi.fn().mockResolvedValue(null),
+      findMockByCollection: vi.fn().mockResolvedValue(null)
     };
 
     await runRepoSync(
