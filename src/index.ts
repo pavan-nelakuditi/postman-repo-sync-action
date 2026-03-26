@@ -6,6 +6,7 @@ import {
   rmSync,
   writeFileSync
 } from 'node:fs';
+import * as path from 'node:path';
 import { dump as dumpYaml } from 'js-yaml';
 
 import { convertAndSplitCollection } from './postman-v3/converter.js';
@@ -294,6 +295,49 @@ function createOutputs(inputs: ResolvedInputs): RepoSyncOutputs {
   };
 }
 
+function varName(projectName: string, baseName: string): string {
+  const slug = projectName.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  return `POSTMAN_${slug}_${baseName}`;
+}
+
+async function readVariable(
+  github: { getRepositoryVariable(name: string): Promise<string> } | undefined,
+  projectName: string,
+  baseName: string
+): Promise<string | undefined> {
+  if (!github) return undefined;
+  const namespaced = await github.getRepositoryVariable(varName(projectName, baseName)).catch(() => undefined);
+  if (namespaced) return namespaced;
+  const legacy = await github.getRepositoryVariable(`POSTMAN_${baseName}`).catch(() => undefined);
+  return legacy || undefined;
+}
+
+async function persistVariable(
+  github: { setRepositoryVariable(name: string, value: string): Promise<void> } | undefined,
+  name: string,
+  value: string,
+  actionCore: { warning(msg: string): void }
+): Promise<void> {
+  if (!github || !value) return;
+  try {
+    await github.setRepositoryVariable(name, value);
+  } catch (err) {
+    actionCore.warning(`Failed to persist ${name}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+async function writeVariable(
+  github: { setRepositoryVariable(name: string, value: string): Promise<void> } | undefined,
+  projectName: string,
+  baseName: string,
+  value: string,
+  actionCore: { warning(msg: string): void }
+): Promise<void> {
+  if (!github || !value) return;
+  await persistVariable(github, varName(projectName, baseName), value, actionCore);
+  await persistVariable(github, `POSTMAN_${baseName}`, value, actionCore);
+}
+
 export function readActionInputs(actionCore: Pick<CoreLike, 'getInput' | 'setSecret'>): ResolvedInputs {
   const projectName = readInput(actionCore, 'project-name', true);
   const postmanApiKey = readInput(actionCore, 'postman-api-key', true);
@@ -463,7 +507,7 @@ async function upsertEnvironments(
 
   if (dependencies.github) {
     try {
-      const existing = await dependencies.github.getRepositoryVariable('POSTMAN_ENV_UIDS_JSON');
+      const existing = await readVariable(dependencies.github, inputs.projectName, 'ENV_UIDS_JSON');
       if (existing) {
         Object.assign(envUids, parseJsonMap(existing));
       }
@@ -488,6 +532,13 @@ async function upsertEnvironments(
       inputs.workspaceId,
       `${inputs.projectName} - ${envName}`,
       values
+    );
+    await writeVariable(
+      dependencies.github,
+      inputs.projectName,
+      'ENV_UIDS_JSON',
+      JSON.stringify(envUids),
+      dependencies.core
     );
   }
 
@@ -564,6 +615,16 @@ function buildResourcesManifest(
   });
 }
 
+
+export function assertPathWithinCwd(targetPath: string, fieldName: string): void {
+  const base = path.resolve('.');
+  const resolved = path.resolve(base, targetPath);
+  const relative = path.relative(base, resolved);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`${fieldName} must stay within the repository root; received ${targetPath}`);
+  }
+}
+
 async function exportArtifacts(
   inputs: ResolvedInputs,
   dependencies: RepoSyncDependencies,
@@ -571,6 +632,11 @@ async function exportArtifacts(
 ): Promise<void> {
   if (!inputs.workspaceId) {
     return;
+  }
+
+  assertPathWithinCwd(inputs.artifactDir, 'artifact-dir');
+  if (inputs.generateCiWorkflow) {
+    assertPathWithinCwd(inputs.ciWorkflowPath, 'ci-workflow-path');
   }
 
   const collectionsDir = `${inputs.artifactDir}/collections`;
@@ -653,33 +719,33 @@ async function persistRepoVariables(
     inputs.envRuntimeUrls[primaryEnvName] || Object.values(inputs.envRuntimeUrls)[0] || ''
   ).trim();
 
-  await dependencies.github.setRepositoryVariable(
-    'POSTMAN_ENV_UIDS_JSON',
-    JSON.stringify(envUids)
+  await writeVariable(
+    dependencies.github,
+    inputs.projectName,
+    'ENV_UIDS_JSON',
+    JSON.stringify(envUids),
+    dependencies.core
   );
   if (primaryEnvUid) {
-    await dependencies.github.setRepositoryVariable(
-      'POSTMAN_ENVIRONMENT_UID',
-      primaryEnvUid
-    );
+    await writeVariable(dependencies.github, inputs.projectName, 'ENVIRONMENT_UID', primaryEnvUid, dependencies.core);
   }
   if (primaryBaseUrl) {
-    await dependencies.github.setRepositoryVariable('RUNTIME_BASE_URL', primaryBaseUrl);
+    await writeVariable(dependencies.github, inputs.projectName, 'RUNTIME_BASE_URL', primaryBaseUrl, dependencies.core);
   }
   if (Object.keys(inputs.envRuntimeUrls).length > 0) {
-    await dependencies.github.setRepositoryVariable(
+    await writeVariable(
+      dependencies.github,
+      inputs.projectName,
       'ENV_RUNTIME_URLS_JSON',
-      JSON.stringify(inputs.envRuntimeUrls)
+      JSON.stringify(inputs.envRuntimeUrls),
+      dependencies.core
     );
   }
   if (outputs['mock-url']) {
-    await dependencies.github.setRepositoryVariable('MOCK_URL', outputs['mock-url']);
+    await writeVariable(dependencies.github, inputs.projectName, 'MOCK_URL', outputs['mock-url'], dependencies.core);
   }
   if (outputs['monitor-id']) {
-    await dependencies.github.setRepositoryVariable(
-      'SMOKE_MONITOR_UID',
-      outputs['monitor-id']
-    );
+    await writeVariable(dependencies.github, inputs.projectName, 'SMOKE_MONITOR_UID', outputs['monitor-id'], dependencies.core);
   }
 }
 
@@ -812,7 +878,7 @@ export async function runRepoSync(
       }
 
       if (!resolvedMockUrl && dependencies.github) {
-        const cached = await dependencies.github.getRepositoryVariable('MOCK_URL').catch(() => '') || '';
+        const cached = (await readVariable(dependencies.github, inputs.projectName, 'MOCK_URL')) || '';
         if (cached) {
           resolvedMockUrl = cached;
           dependencies.core.info(`Reusing mock from repo variable: ${resolvedMockUrl}`);
@@ -828,12 +894,16 @@ export async function runRepoSync(
         );
         resolvedMockUrl = mock.url;
         dependencies.core.info(`Created new mock: ${resolvedMockUrl}`);
+        await writeVariable(
+          dependencies.github,
+          inputs.projectName,
+          'MOCK_URL',
+          resolvedMockUrl,
+          dependencies.core
+        );
       }
 
       outputs['mock-url'] = resolvedMockUrl;
-      if (dependencies.github && resolvedMockUrl) {
-        await dependencies.github.setRepositoryVariable('MOCK_URL', resolvedMockUrl).catch(() => undefined);
-      }
     }
   }
 
@@ -843,7 +913,11 @@ export async function runRepoSync(
 
     let effectiveCron = inputs.monitorCron && inputs.monitorCron.trim() ? inputs.monitorCron.trim() : '';
     if (!effectiveCron && dependencies.github) {
-      const storedCron = await dependencies.github.getRepositoryVariable('MONITOR_CRON_SCHEDULE').catch(() => '');
+      const storedCron = (await readVariable(
+        dependencies.github,
+        inputs.projectName,
+        'MONITOR_CRON_SCHEDULE'
+      )) || '';
       if (storedCron) {
         if (storedCron.toLowerCase() === 'disabled' || storedCron.toLowerCase() === 'off') {
           disableMonitor = true;
@@ -875,7 +949,8 @@ export async function runRepoSync(
       }
 
       if (!resolvedMonitorId && dependencies.github) {
-        const cached = await dependencies.github.getRepositoryVariable('SMOKE_MONITOR_UID').catch(() => '') || '';
+        const cached =
+          (await readVariable(dependencies.github, inputs.projectName, 'SMOKE_MONITOR_UID')) || '';
         if (cached) {
           const valid = await dependencies.postman.monitorExists(cached);
           if (valid) {
@@ -896,12 +971,16 @@ export async function runRepoSync(
           effectiveCron || undefined
         );
         dependencies.core.info(`Created new monitor: ${resolvedMonitorId}${effectiveCron ? '' : ' (disabled — no cron configured)'}`);
+        await writeVariable(
+          dependencies.github,
+          inputs.projectName,
+          'SMOKE_MONITOR_UID',
+          resolvedMonitorId,
+          dependencies.core
+        );
       }
 
       outputs['monitor-id'] = resolvedMonitorId;
-      if (dependencies.github && resolvedMonitorId) {
-        await dependencies.github.setRepositoryVariable('SMOKE_MONITOR_UID', resolvedMonitorId).catch(() => undefined);
-      }
     } else if (disableMonitor) {
       dependencies.core.info('Monitor creation skipped because MONITOR_CRON_SCHEDULE is disabled.');
     }
