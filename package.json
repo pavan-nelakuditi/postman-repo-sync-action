@@ -1,5 +1,5 @@
 {
-  "name": "postman-repo-sync-action",
+  "name": "@postman-cse/onboarding-repo-sync",
   "version": "0.1.0-alpha.0",
   "description": "Public open-alpha Postman repo sync GitHub Action.",
   "type": "module",
@@ -22,6 +22,9 @@
     "postman"
   ],
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "overrides": {
     "undici": "^6.24.0"
   },

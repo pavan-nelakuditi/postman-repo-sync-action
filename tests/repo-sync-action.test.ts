@@ -554,7 +554,7 @@ describe('monitor resolution paths', () => {
       monitorExists: vi.fn().mockResolvedValue(true),
       findMonitorByCollection: vi.fn().mockResolvedValue(null)
     });
-    const github = makeGithub({ SMOKE_MONITOR_UID: 'cached-mon' });
+    const github = makeGithub({ POSTMAN_SMOKE_MONITOR_UID: 'cached-mon' });
     const result = await runRepoSync(
       createInputs({ environments: ['prod'], generateCiWorkflow: false }),
       makeDeps(postman, github)
@@ -569,7 +569,7 @@ describe('monitor resolution paths', () => {
       monitorExists: vi.fn().mockResolvedValue(false),
       findMonitorByCollection: vi.fn().mockResolvedValue(null)
     });
-    const github = makeGithub({ SMOKE_MONITOR_UID: 'stale-cached-mon' });
+    const github = makeGithub({ POSTMAN_SMOKE_MONITOR_UID: 'stale-cached-mon' });
     const result = await runRepoSync(
       createInputs({ environments: ['prod'], generateCiWorkflow: false }),
       makeDeps(postman, github)
@@ -666,7 +666,7 @@ describe('mock resolution paths', () => {
 
   it('reuses cached repo variable mock URL', async () => {
     const postman = makePostman({ findMockByCollection: vi.fn().mockResolvedValue(null) });
-    const github = makeGithub({ MOCK_URL: 'https://cached-mock.pstmn.io' });
+    const github = makeGithub({ POSTMAN_MOCK_URL: 'https://cached-mock.pstmn.io' });
     const result = await runRepoSync(
       createInputs({ environments: ['prod'], generateCiWorkflow: false }),
       makeDeps(postman, github)
