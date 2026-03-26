@@ -67,6 +67,8 @@ function createInputs(overrides: Partial<ResolvedInputs> = {}): ResolvedInputs {
     sslClientKey: '',
     sslClientPassphrase: '',
     sslExtraCaCerts: '',
+    specId: '',
+    releasesJson: '',
     teamId: '',
     repository: 'postman-cs/repo-sync-demo',
     ...overrides
@@ -284,7 +286,7 @@ describe('repo sync action', () => {
     expect(readFileSync('.github/workflows/ci.yml', 'utf8')).toContain(
       'name: CI/CD Pipeline'
     );
-    expect(readFileSync('.postman/config.json', 'utf8')).toContain('"schemaVersion"');
+    expect(existsSync('.postman/config.json')).toBe(false);
 
     const baselineCollection = loadYaml(
       readFileSync('postman/collections/[Baseline] core-payments/collection.yaml', 'utf8')
@@ -316,15 +318,28 @@ describe('repo sync action', () => {
     });
     expect(resourcesYaml).toEqual({
       workspace: { id: 'ws-123' },
+      localResources: {
+        collections: [
+          '../postman/collections/[Baseline] core-payments',
+          '../postman/collections/[Smoke] core-payments',
+          '../postman/collections/[Contract] core-payments'
+        ],
+        environments: [
+          '../postman/environments/prod.postman_environment.json',
+          '../postman/environments/stage.postman_environment.json'
+        ],
+        specs: ['../index.yaml']
+      },
       cloudResources: {
         collections: {
           '../postman/collections/[Baseline] core-payments': 'col-baseline',
           '../postman/collections/[Smoke] core-payments': 'col-smoke',
           '../postman/collections/[Contract] core-payments': 'col-contract'
+        },
+        environments: {
+          '../postman/environments/prod.postman_environment.json': 'env-prod',
+          '../postman/environments/stage.postman_environment.json': 'env-stage'
         }
-      },
-      localResources: {
-        specs: ['../index.yaml']
       }
     });
   });
@@ -1112,6 +1127,20 @@ describe('org-mode auto-detection', () => {
 });
 
 describe('repo-variable fallback resolution', () => {
+  let originalCwd = '';
+  let testDir = '';
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    testDir = mkdtempSync(join(tmpdir(), 'repo-sync-fallback-'));
+    process.chdir(testDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
   function makePostman(overrides: Record<string, any> = {}) {
     return {
       createEnvironment: vi.fn().mockResolvedValue('env-prod'),
