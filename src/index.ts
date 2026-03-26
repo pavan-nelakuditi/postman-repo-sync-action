@@ -3,11 +3,12 @@ import * as exec from '@actions/exec';
 import {
   existsSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   writeFileSync
 } from 'node:fs';
 import * as path from 'node:path';
-import { dump as dumpYaml } from 'js-yaml';
+import { dump as dumpYaml, load as loadYaml } from 'js-yaml';
 
 import { convertAndSplitCollection } from './postman-v3/converter.js';
 import { CI_WORKFLOW_TEMPLATE } from './lib/ci-workflow-template.js';
@@ -72,6 +73,8 @@ export interface ResolvedInputs {
   sslClientKey: string;
   sslClientPassphrase: string;
   sslExtraCaCerts: string;
+  specId: string;
+  releasesJson: string;
   teamId: string;
   repository: string;
 }
@@ -275,6 +278,8 @@ export function resolveInputs(env: NodeJS.ProcessEnv = process.env): ResolvedInp
     baselineCollectionId: getInput('baseline-collection-id', env),
     smokeCollectionId: getInput('smoke-collection-id', env),
     contractCollectionId: getInput('contract-collection-id', env),
+    specId: getInput('spec-id', env),
+    releasesJson: getInput('releases-json', env),
     collectionSyncMode: normalizeCollectionSyncMode(getInput('collection-sync-mode', env) || 'refresh'),
     specSyncMode: normalizeSpecSyncMode(getInput('spec-sync-mode', env) || 'update'),
     releaseLabel: normalizeReleaseLabel(getInput('release-label', env)) || undefined,
@@ -661,19 +666,50 @@ function writeJsonFile(path: string, content: unknown, normalize = false): void 
 
 function buildResourcesManifest(
   workspaceId: string,
-  collectionMap: Record<string, string>
+  collectionMap: Record<string, string>,
+  envMap: Record<string, string>,
+  artifactDir: string,
+  specId?: string
 ): string {
   const manifest: Record<string, unknown> = {
     workspace: { id: workspaceId }
   };
-  if (Object.keys(collectionMap).length > 0) {
-    manifest.cloudResources = {
-      collections: collectionMap
-    };
+
+  const localResources: Record<string, string[]> = {};
+  const cloudResources: Record<string, Record<string, string>> = {};
+
+  // Collections
+  const collectionKeys = Object.keys(collectionMap);
+  if (collectionKeys.length > 0) {
+    localResources.collections = collectionKeys;
+    cloudResources.collections = collectionMap;
   }
-  manifest.localResources = {
-    specs: ['../index.yaml']
-  };
+
+  // Environments
+  const envEntries = Object.entries(envMap);
+  if (envEntries.length > 0) {
+    localResources.environments = envEntries.map(
+      ([envName]) => `../${artifactDir}/environments/${envName}.postman_environment.json`
+    );
+    cloudResources.environments = {};
+    for (const [envName, envUid] of envEntries) {
+      cloudResources.environments[`../${artifactDir}/environments/${envName}.postman_environment.json`] = envUid;
+    }
+  }
+
+  // Specs
+  localResources.specs = ['../index.yaml'];
+  if (specId) {
+    cloudResources.specs = { '../index.yaml': specId };
+  }
+
+  if (Object.keys(localResources).length > 0) {
+    manifest.localResources = localResources;
+  }
+  if (Object.keys(cloudResources).length > 0) {
+    manifest.cloudResources = cloudResources;
+  }
+
   return dumpYaml(manifest, {
     lineWidth: -1,
     noRefs: true,
@@ -755,15 +791,26 @@ async function exportArtifacts(
     );
   }
 
-  writeJsonFile('.postman/config.json', {
-    schemaVersion: '1',
-    workspace: { id: inputs.workspaceId },
-    collectionPaths: [`${inputs.artifactDir}/collections/`],
-    environmentPaths: [`${inputs.artifactDir}/environments/`],
-    mockPaths: [`${inputs.artifactDir}/mocks/`]
-  });
+  writeFileSync('.postman/resources.yaml', buildResourcesManifest(
+    inputs.workspaceId,
+    manifestCollections,
+    envUids,
+    inputs.artifactDir,
+    inputs.specId || undefined
+  ));
 
-  writeFileSync('.postman/resources.yaml', buildResourcesManifest(inputs.workspaceId, manifestCollections));
+  if (inputs.releasesJson) {
+    try {
+      const releases = JSON.parse(inputs.releasesJson);
+      writeFileSync('.postman/releases.yaml', dumpYaml(releases, {
+        lineWidth: -1,
+        noRefs: true,
+        sortKeys: false
+      }));
+    } catch {
+      // Invalid JSON -- skip releases.yaml write
+    }
+  }
 }
 
 function renderCiWorkflow(inputs: ResolvedInputs): string {
@@ -908,6 +955,34 @@ export async function runRepoSync(
     throw new Error('release-label is required when collection-sync-mode or spec-sync-mode is version');
   }
   const assetProjectName = createAssetProjectName(inputs, releaseLabel);
+
+  // .postman/ file fallback (works for all CI providers, not just GitHub)
+  try {
+    const raw = readFileSync('.postman/resources.yaml', 'utf8');
+    const resourcesState = loadYaml(raw) as Record<string, unknown> | null;
+    if (resourcesState) {
+      const ws = (resourcesState.workspace as Record<string, string> | undefined);
+      if (!inputs.workspaceId && ws?.id) {
+        inputs.workspaceId = ws.id;
+        dependencies.core.info('Resolved workspace-id from .postman/resources.yaml');
+      }
+      const cloudCollections = (resourcesState.cloudResources as Record<string, unknown> | undefined)?.collections as Record<string, string> | undefined;
+      if (cloudCollections) {
+        if (!inputs.baselineCollectionId) {
+          const match = Object.entries(cloudCollections).find(([k]) => k.includes('[Baseline]'));
+          if (match) { inputs.baselineCollectionId = match[1]; dependencies.core.info('Resolved baseline-collection-id from .postman/resources.yaml'); }
+        }
+        if (!inputs.smokeCollectionId) {
+          const match = Object.entries(cloudCollections).find(([k]) => k.includes('[Smoke]'));
+          if (match) { inputs.smokeCollectionId = match[1]; dependencies.core.info('Resolved smoke-collection-id from .postman/resources.yaml'); }
+        }
+        if (!inputs.contractCollectionId) {
+          const match = Object.entries(cloudCollections).find(([k]) => k.includes('[Contract]'));
+          if (match) { inputs.contractCollectionId = match[1]; dependencies.core.info('Resolved contract-collection-id from .postman/resources.yaml'); }
+        }
+      }
+    }
+  } catch { /* .postman/resources.yaml doesn't exist yet */ }
 
   // Auto-resolve asset IDs from repo variables when not provided explicitly
   if (dependencies.github) {

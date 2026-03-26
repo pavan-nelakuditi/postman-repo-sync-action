@@ -25521,6 +25521,8 @@ function resolveInputs(env = process.env) {
     baselineCollectionId: getInput("baseline-collection-id", env),
     smokeCollectionId: getInput("smoke-collection-id", env),
     contractCollectionId: getInput("contract-collection-id", env),
+    specId: getInput("spec-id", env),
+    releasesJson: getInput("releases-json", env),
     collectionSyncMode: normalizeCollectionSyncMode(getInput("collection-sync-mode", env) || "refresh"),
     specSyncMode: normalizeSpecSyncMode(getInput("spec-sync-mode", env) || "update"),
     releaseLabel: normalizeReleaseLabel(getInput("release-label", env)) || void 0,
@@ -25836,18 +25838,37 @@ function writeJsonFile(path3, content, normalize2 = false) {
   const data = normalize2 ? stripVolatileFields(content) : content;
   (0, import_node_fs.writeFileSync)(path3, JSON.stringify(data, null, 2));
 }
-function buildResourcesManifest(workspaceId, collectionMap) {
+function buildResourcesManifest(workspaceId, collectionMap, envMap, artifactDir, specId) {
   const manifest = {
     workspace: { id: workspaceId }
   };
-  if (Object.keys(collectionMap).length > 0) {
-    manifest.cloudResources = {
-      collections: collectionMap
-    };
+  const localResources = {};
+  const cloudResources = {};
+  const collectionKeys = Object.keys(collectionMap);
+  if (collectionKeys.length > 0) {
+    localResources.collections = collectionKeys;
+    cloudResources.collections = collectionMap;
   }
-  manifest.localResources = {
-    specs: ["../index.yaml"]
-  };
+  const envEntries = Object.entries(envMap);
+  if (envEntries.length > 0) {
+    localResources.environments = envEntries.map(
+      ([envName]) => `../${artifactDir}/environments/${envName}.postman_environment.json`
+    );
+    cloudResources.environments = {};
+    for (const [envName, envUid] of envEntries) {
+      cloudResources.environments[`../${artifactDir}/environments/${envName}.postman_environment.json`] = envUid;
+    }
+  }
+  localResources.specs = ["../index.yaml"];
+  if (specId) {
+    cloudResources.specs = { "../index.yaml": specId };
+  }
+  if (Object.keys(localResources).length > 0) {
+    manifest.localResources = localResources;
+  }
+  if (Object.keys(cloudResources).length > 0) {
+    manifest.cloudResources = cloudResources;
+  }
   return dump(manifest, {
     lineWidth: -1,
     noRefs: true,
@@ -25912,14 +25933,24 @@ async function exportArtifacts(inputs, dependencies, envUids, assetProjectName) 
       true
     );
   }
-  writeJsonFile(".postman/config.json", {
-    schemaVersion: "1",
-    workspace: { id: inputs.workspaceId },
-    collectionPaths: [`${inputs.artifactDir}/collections/`],
-    environmentPaths: [`${inputs.artifactDir}/environments/`],
-    mockPaths: [`${inputs.artifactDir}/mocks/`]
-  });
-  (0, import_node_fs.writeFileSync)(".postman/resources.yaml", buildResourcesManifest(inputs.workspaceId, manifestCollections));
+  (0, import_node_fs.writeFileSync)(".postman/resources.yaml", buildResourcesManifest(
+    inputs.workspaceId,
+    manifestCollections,
+    envUids,
+    inputs.artifactDir,
+    inputs.specId || void 0
+  ));
+  if (inputs.releasesJson) {
+    try {
+      const releases = JSON.parse(inputs.releasesJson);
+      (0, import_node_fs.writeFileSync)(".postman/releases.yaml", dump(releases, {
+        lineWidth: -1,
+        noRefs: true,
+        sortKeys: false
+      }));
+    } catch {
+    }
+  }
 }
 function renderCiWorkflow(inputs) {
   if (inputs.ciWorkflowBase64) {
@@ -26031,6 +26062,42 @@ async function runRepoSync(inputs, dependencies) {
     throw new Error("release-label is required when collection-sync-mode or spec-sync-mode is version");
   }
   const assetProjectName = createAssetProjectName(inputs, releaseLabel);
+  try {
+    const raw = (0, import_node_fs.readFileSync)(".postman/resources.yaml", "utf8");
+    const resourcesState = load(raw);
+    if (resourcesState) {
+      const ws = resourcesState.workspace;
+      if (!inputs.workspaceId && ws?.id) {
+        inputs.workspaceId = ws.id;
+        dependencies.core.info("Resolved workspace-id from .postman/resources.yaml");
+      }
+      const cloudCollections = resourcesState.cloudResources?.collections;
+      if (cloudCollections) {
+        if (!inputs.baselineCollectionId) {
+          const match = Object.entries(cloudCollections).find(([k]) => k.includes("[Baseline]"));
+          if (match) {
+            inputs.baselineCollectionId = match[1];
+            dependencies.core.info("Resolved baseline-collection-id from .postman/resources.yaml");
+          }
+        }
+        if (!inputs.smokeCollectionId) {
+          const match = Object.entries(cloudCollections).find(([k]) => k.includes("[Smoke]"));
+          if (match) {
+            inputs.smokeCollectionId = match[1];
+            dependencies.core.info("Resolved smoke-collection-id from .postman/resources.yaml");
+          }
+        }
+        if (!inputs.contractCollectionId) {
+          const match = Object.entries(cloudCollections).find(([k]) => k.includes("[Contract]"));
+          if (match) {
+            inputs.contractCollectionId = match[1];
+            dependencies.core.info("Resolved contract-collection-id from .postman/resources.yaml");
+          }
+        }
+      }
+    }
+  } catch {
+  }
   if (dependencies.github) {
     if (!inputs.workspaceId) {
       const stored = await readVariable(dependencies.github, inputs.projectName, "WORKSPACE_ID");

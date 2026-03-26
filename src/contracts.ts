@@ -241,6 +241,14 @@ export const postmanRepoSyncActionContract: {
     'ssl-extra-ca-certs': {
       description: 'Optional base64-encoded PEM CA certificate bundle for custom trust.',
       required: false
+    },
+    'spec-id': {
+      description: 'Spec UID from bootstrap, persisted into .postman/resources.yaml cloudResources.',
+      required: false
+    },
+    'releases-json': {
+      description: 'JSON-serialized releases manifest from bootstrap, persisted as .postman/releases.yaml.',
+      required: false
     }
   },
   outputs: {

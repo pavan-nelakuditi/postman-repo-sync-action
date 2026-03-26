@@ -54,7 +54,9 @@ describe('postman-repo-sync-action contract', () => {
       'ssl-client-cert',
       'ssl-client-key',
       'ssl-client-passphrase',
-      'ssl-extra-ca-certs'
+      'ssl-extra-ca-certs',
+      'spec-id',
+      'releases-json'
     ]);
 
     expect(Object.keys(postmanRepoSyncActionContract.outputs)).toEqual([
