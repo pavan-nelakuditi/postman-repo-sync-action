@@ -148,6 +148,53 @@ steps:
 
 The CLI accepts the same repo-context signals as the action and auto-detects branch, SHA, and repo URL from provider-specific environment variables when available.
 
+## Protected-branch repos: commit-only + customer-managed PR
+
+If your repository enforces branch protection rules requiring all changes through pull requests, use `repo-write-mode: commit-only` to avoid direct pushes to `main`.
+
+### How it works
+
+1. **Create a sync branch:** Start the workflow on a temporary branch (e.g., `postman-sync/YYYYMMDD-HHmmss`) — this branch is unprotected.
+2. **Run with commit-only:** Execute the action with `repo-write-mode: commit-only`. Artifacts are committed to the branch but **not** pushed to `main`.
+3. **Create PR:** Your workflow uses `gh pr create` (or your platform's API) to open a pull request targeting `main`.
+4. **Review & merge:** Your team reviews the PR and merges when ready to apply the artifacts.
+
+### Understanding Postman vs. Repository state
+
+**When the action completes successfully:**
+- ✅ **Postman side:** Collections exported, environments synced, monitors/mocks created
+- ⏳ **Repository side:** Artifacts committed to feature branch, PR opened, **merge still pending** your team's review
+
+This separation is intentional:
+- **Debug independently:** Verify Postman workspace health without repository concerns
+- **Flexible approval:** Let your team's PR review process control when artifacts apply
+- **Idempotent reruns:** Reuse existing Postman assets (workspace ID, collection IDs) when retrying repo operations
+
+### Tracking merge state
+
+Use the composite action's phase status outputs to distinguish Postman success from repo merge state:
+
+```yaml
+steps:
+  - uses: postman-cs/postman-api-onboarding-action@v0
+    id: onboarding
+    with:
+      repo-write-mode: commit-only
+      # ... other inputs
+
+  - name: Check sync state
+    run: |
+      echo "Bootstrap: ${{ steps.onboarding.outputs.bootstrap-status }}"
+      echo "Repo Sync: ${{ steps.onboarding.outputs.repo-sync-status }}"
+      echo "Commit SHA: ${{ steps.onboarding.outputs.commit-sha }}"
+```
+
+When `repo-sync-status` is `success` but your PR is pending, the artifacts are safely staged awaiting approval.
+
+### Reference implementation
+
+See [GoodLeap's example workflow](https://github.com/postman-cs/goodleap-heatmap-onboarding/blob/main/.github/workflows/onboard-heatmap.yml) for a complete working reference using GitHub Actions with `commit-only` mode and automated PR creation.
+
 ## Usage
 
 ```yaml
