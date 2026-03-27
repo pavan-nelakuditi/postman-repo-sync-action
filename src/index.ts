@@ -664,12 +664,21 @@ async function upsertEnvironments(
     const values = buildEnvironmentValues(envName, runtimeUrl);
     const existingUid = envUids[envName];
     if (existingUid) {
-      await dependencies.postman.updateEnvironment(
-        existingUid,
-        `${inputs.projectName} - ${envName}`,
-        values
-      );
-      continue;
+      try {
+        await dependencies.postman.updateEnvironment(
+          existingUid,
+          `${inputs.projectName} - ${envName}`,
+          values
+        );
+        continue;
+      } catch (error) {
+        if (!isMissingEnvironmentError(error)) {
+          throw error;
+        }
+        dependencies.core.warning(
+          `Environment '${envName}' (${existingUid}) no longer exists in Postman; recreating it.`
+        );
+      }
     }
     envUids[envName] = await dependencies.postman.createEnvironment(
       inputs.workspaceId,
@@ -679,6 +688,16 @@ async function upsertEnvironments(
   }
 
   return envUids;
+}
+
+function isMissingEnvironmentError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return (
+    error.message.includes('/environments/') &&
+    (error.message.includes('404') || error.message.includes('instanceNotFoundError'))
+  );
 }
 
 function ensureDir(path: string): void {

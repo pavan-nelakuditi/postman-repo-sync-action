@@ -1126,6 +1126,74 @@ describe('repo-variable fallback resolution', () => {
     expect(postman.createEnvironment).not.toHaveBeenCalled();
   });
 
+  it('recreates stale environments resolved from .postman/resources.yaml when update returns 404', async () => {
+    const postman = makePostman({
+      updateEnvironment: vi
+        .fn()
+        .mockRejectedValueOnce(
+          new Error(
+            'PUT https://api.getpostman.com/environments/env-prod-file failed: 404 Not Found - {"error":{"name":"instanceNotFoundError","message":"The specified environment does not exist."}}'
+          )
+        )
+        .mockResolvedValueOnce(undefined),
+      createEnvironment: vi.fn().mockResolvedValue('env-prod-recreated')
+    });
+    const { core, warnings } = createCoreStub();
+    const github = makeGithub();
+    mkdirSync('.postman', { recursive: true });
+    writeFileSync(
+      '.postman/resources.yaml',
+      [
+        'workspace:',
+        '  id: ws-123',
+        'cloudResources:',
+        '  environments:',
+        '    "../postman/environments/prod.postman_environment.json": env-prod-file',
+        '    "../postman/environments/stage.postman_environment.json": env-stage-file',
+        ''
+      ].join('\n')
+    );
+
+    const result = await runRepoSync(
+      createInputs({
+        environments: ['prod', 'stage'],
+        generateCiWorkflow: false,
+        workspaceId: 'ws-123',
+        baselineCollectionId: 'col-baseline',
+        smokeCollectionId: 'col-smoke',
+        contractCollectionId: 'col-contract',
+        environmentUids: {}
+      }),
+      {
+        ...makeDeps(postman, github),
+        core
+      }
+    );
+
+    expect(postman.updateEnvironment).toHaveBeenCalledWith(
+      'env-prod-file',
+      'core-payments - prod',
+      expect.any(Array)
+    );
+    expect(postman.updateEnvironment).toHaveBeenCalledWith(
+      'env-stage-file',
+      'core-payments - stage',
+      expect.any(Array)
+    );
+    expect(postman.createEnvironment).toHaveBeenCalledTimes(1);
+    expect(postman.createEnvironment).toHaveBeenCalledWith(
+      'ws-123',
+      'core-payments - prod',
+      expect.any(Array)
+    );
+    expect(result['environment-uids-json']).toBe(
+      JSON.stringify({ prod: 'env-prod-recreated', stage: 'env-stage-file' })
+    );
+    expect(warnings).toContain(
+      "Environment 'prod' (env-prod-file) no longer exists in Postman; recreating it."
+    );
+  });
+
   it('does not resolve asset ids from repository variables when .postman/resources.yaml is absent', async () => {
     const postman = makePostman({
       getCollection: vi
